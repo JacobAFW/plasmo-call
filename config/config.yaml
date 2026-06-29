@@ -24,7 +24,10 @@ aligner: "bwa"            # "bwa" (bwa mem) | "bwa-mem2"  (drop-in, same output)
 #   bootstrap    -> ignore any VCF; call w/ BQSR off -> hard-filter -> use as known-sites
 #   off          -> skip BQSR entirely
 bqsr:
-  mode: "auto"
+  # Milestone B ships with BQSR off — the recalibration + bootstrap rules
+  # land in the next prompt. Switch to "auto"/"known_sites"/"bootstrap" once
+  # rules/bqsr.smk is wired up.
+  mode: "off"
   known_variants: []      # e.g. ["reference/known_sites.vcf.gz"]
   bootstrap:
     iterations: 1         # 1 = single bootstrap pass; >1 to iterate

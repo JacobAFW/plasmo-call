@@ -18,9 +18,15 @@ reference/*
 output/ outputs/ results/ logs/ work/ tmp/
 .snakemake/
 
-# ---- Test data payload (keep README + tiny tracked fixtures only) ----
+# ---- Test data payload (keep README + generators tracked, data ignored) ----
 test/*
 !test/README.md
+!test/generate-fixtures.py
+!test/config.yaml
+# Generated fixtures + run outputs stay out:
+test/reference/
+test/fastq/
+test/output/
 
 # ---- pixi / conda env (lock IS committed, env dir is not) ----
 .pixi/

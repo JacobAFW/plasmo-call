@@ -41,3 +41,9 @@ run-local = { cmd = "snakemake --cores ${CORES} --snakefile workflow/Snakefile -
 
 # Dry-run / DAG parse check (used by acceptance + CI).
 dry-run = "snakemake -n --snakefile workflow/Snakefile --configfile config/config.yaml"
+
+# Smoke test: generate tiny synthetic dataset + run pipeline end-to-end (local).
+# Override cores with `CORES=8 pixi run smoke-test`.
+test-setup = "python test/generate-fixtures.py"
+smoke-test = "bash scripts/smoke-test.sh"
+smoke-dry  = "snakemake -n --snakefile workflow/Snakefile --configfile config/config.yaml --configfile test/config.yaml"

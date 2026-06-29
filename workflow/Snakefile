@@ -1,36 +1,28 @@
 # =============================================================================
-# plasmo-call — Snakefile (SKELETON / target DAG map)
-# Pipeline logic is NOT ported yet. This file documents the target GATK4 DAG
-# and includes empty rule modules. Refactor of the original rules happens in
-# the next phase, after sign-off on this skeleton.
+# plasmo-call — Snakefile
+# Milestone B: fastq → mapped/dupmarked BAM → GATK4 GVCF → per-chrom genotyped
+# VCF. BQSR is OFF; bcftools arm + consensus + concat land in later milestones.
 #
-# Target flow (fastq -> Consensus.vcf.gz), GATK4:
-#   bwa/bwa-mem2 mem -> samtools sort -> Picard MarkDuplicates -> RG reheader
-#     -> [BQSR: BaseRecalibrator -> ApplyBQSR]   (mode: auto|known_sites|bootstrap|off)
-#     -> GATK4 HaplotypeCaller (GVCF, Anto params + per-species priors)
-#     -> CombineGVCFs/GenomicsDBImport -> GenotypeGVCFs (per-chromosome)
-#   bcftools mpileup|call (per interval)  ---------------------------------\
-#   CONSENSUS: GATK genotypes restricted to bcftools-called positions  <---/
-#     -> concat -> output/calling/consensus/Consensus.vcf.gz
+# Target DAG (this milestone):
+#   bwa/bwa-mem2 mem -> samtools sort -> MarkDuplicates -> RG reheader
+#     -> GATK4 HaplotypeCaller (GVCF) -> CombineGVCFs -> GenotypeGVCFs (per chrom)
 #
-# REMOVED vs original (GATK3): RealignerTargetCreator + IndelRealigner
-#   (GATK4 HaplotypeCaller local reassembly replaces them).
+# REMOVED vs GATK3 predecessor: RealignerTargetCreator + IndelRealigner.
+# DEFERRED: BQSR rules (rules/bqsr.smk), bcftools arm (rules/calling_bcftools.smk),
+# consensus + concat (rules/consensus.smk), Consensus.vcf.gz target.
 # =============================================================================
 
 configfile: "config/config.yaml"
 
-# include: "rules/common.smk"          # config load, sample discovery, interval wrangling
-# include: "rules/mapping.smk"         # bwa / bwa-mem2, sort, markdup, reheader
-# include: "rules/bqsr.smk"            # BaseRecalibrator/ApplyBQSR + bootstrap logic
-# include: "rules/calling_gatk.smk"    # HaplotypeCaller -> CombineGVCFs -> GenotypeGVCFs
-# include: "rules/calling_bcftools.smk"# mpileup|call per interval
-# include: "rules/consensus.smk"       # GATK ∩ bcftools positions -> concat
+include: "rules/common.smk"          # config load + sample/interval wrangling
+include: "rules/mapping.smk"         # bwa / bwa-mem2, sort, markdup, reheader
+include: "rules/calling_gatk.smk"    # HC -> CombineGVCFs -> GenotypeGVCFs
+# include: "rules/bqsr.smk"            # next prompt
+# include: "rules/calling_bcftools.smk"# next prompt
+# include: "rules/consensus.smk"       # next prompt
 
-# Real target (wired up once mapping/calling rules land):
-#   "output/calling/consensus/Consensus.vcf.gz"
-# Skeleton: rule all is empty until source_dir is set and rules are included.
-# This keeps `snakemake -n` clean against a stock checkout.
+# Milestone target: one genotyped VCF per chromosome from the GATK arm.
 rule all:
     input:
-        [] if not config.get("source_dir") else
-        ["output/calling/consensus/Consensus.vcf.gz"]
+        expand("output/calling/gatk/joint/gatk_genotyped_{chromosome}.vcf.gz",
+               chromosome=CHROMOSOME),

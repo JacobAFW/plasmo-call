@@ -1,0 +1,17 @@
+# =============================================================================
+# plasmo-call — TEST overlay config
+# Used by the local smoke test: `pixi run smoke-test` (see pixi.toml tasks).
+# Layered on top of config/config.yaml via `--configfile`.
+# =============================================================================
+
+source_dir: "test/fastq"
+
+reference:
+  fasta: "test/reference/synth.fasta"
+  bed:   "test/reference/synth.bed"
+
+aligner: "bwa"            # bwa-mem2 unavailable on osx-arm64
+species:  "vivax"         # only documented preset
+
+bqsr:
+  mode: "off"
