@@ -1,0 +1,31 @@
+# =============================================================================
+# plasmo-call — Snakefile (SKELETON / target DAG map)
+# Pipeline logic is NOT ported yet. This file documents the target GATK4 DAG
+# and includes empty rule modules. Refactor of the original rules happens in
+# the next phase, after sign-off on this skeleton.
+#
+# Target flow (fastq -> Consensus.vcf.gz), GATK4:
+#   bwa/bwa-mem2 mem -> samtools sort -> Picard MarkDuplicates -> RG reheader
+#     -> [BQSR: BaseRecalibrator -> ApplyBQSR]   (mode: auto|known_sites|bootstrap|off)
+#     -> GATK4 HaplotypeCaller (GVCF, Anto params + per-species priors)
+#     -> CombineGVCFs/GenomicsDBImport -> GenotypeGVCFs (per-chromosome)
+#   bcftools mpileup|call (per interval)  ---------------------------------\
+#   CONSENSUS: GATK genotypes restricted to bcftools-called positions  <---/
+#     -> concat -> output/calling/consensus/Consensus.vcf.gz
+#
+# REMOVED vs original (GATK3): RealignerTargetCreator + IndelRealigner
+#   (GATK4 HaplotypeCaller local reassembly replaces them).
+# =============================================================================
+
+configfile: "config/config.yaml"
+
+# include: "rules/common.smk"          # config load, sample discovery, interval wrangling
+# include: "rules/mapping.smk"         # bwa / bwa-mem2, sort, markdup, reheader
+# include: "rules/bqsr.smk"            # BaseRecalibrator/ApplyBQSR + bootstrap logic
+# include: "rules/calling_gatk.smk"    # HaplotypeCaller -> CombineGVCFs -> GenotypeGVCFs
+# include: "rules/calling_bcftools.smk"# mpileup|call per interval
+# include: "rules/consensus.smk"       # GATK ∩ bcftools positions -> concat
+
+rule all:
+    input:
+        "output/calling/consensus/Consensus.vcf.gz"

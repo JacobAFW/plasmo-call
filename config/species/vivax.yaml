@@ -1,0 +1,7 @@
+# Plasmodium vivax — DOCUMENTED preset (Anto, tuned for P. vivax).
+# This is the ONLY species with validated priors shipped in plasmo-call.
+species_name: "Plasmodium vivax"
+heterozygosity: 0.0029          # --heterozygosity
+indel_heterozygosity: 0.0017    # --indel-heterozygosity
+source: "Anto, P. vivax-tuned priors"
+status: "documented"

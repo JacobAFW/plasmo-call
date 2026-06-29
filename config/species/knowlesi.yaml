@@ -1,0 +1,8 @@
+# Plasmodium knowlesi — STUB. Priors are NOT set.
+# Per-species priors must be provided (from literature or estimated) before use.
+# Do NOT copy the vivax values here — they are vivax-specific.
+species_name: "Plasmodium knowlesi"
+heterozygosity:        # TBD — REQUIRED, set before running knowlesi
+indel_heterozygosity:  # TBD — REQUIRED, set before running knowlesi
+source: ""
+status: "TBD — priors unset"

@@ -1,0 +1,35 @@
+# ============================ plasmo-call .gitignore =========================
+# Scripts-only repo. Data, references, secrets, and run outputs stay OUT.
+
+# ---- Sequencing / variant DATA (never commit) ----
+*.fastq *.fastq.gz *.fq *.fq.gz
+*.bam *.bai *.cram *.crai *.sam
+*.vcf *.vcf.gz *.vcf.gz.tbi *.bcf *.g.vcf.gz
+*.bed.gz
+# Reference genomes & indices (keep README only)
+reference/*
+!reference/README.md
+*.fasta *.fa *.fasta.* *.fa.* *.fai *.dict *.amb *.ann *.bwt *.pac *.sa *.0123 *.bwt.2bit.64
+
+# ---- Known-sites / bootstrap intermediates ----
+*.recal.table *_recal.table
+
+# ---- Run outputs / working dirs ----
+output/ outputs/ results/ logs/ work/ tmp/
+.snakemake/
+
+# ---- Test data payload (keep README + tiny tracked fixtures only) ----
+test/*
+!test/README.md
+
+# ---- pixi / conda env (lock IS committed, env dir is not) ----
+.pixi/
+# NOTE: pixi.lock is intentionally COMMITTED for reproducibility.
+
+# ---- Secrets / site config (never commit) ----
+.env .env.* *.key *.pem credentials* *secret*
+# Filled-in site profiles with real account/queue/storage/email:
+profiles/**/site.local.* profiles/**/*.local.yaml
+
+# ---- Editor / OS junk ----
+.DS_Store Thumbs.db .idea/ .vscode/ *.swp __pycache__/ *.pyc

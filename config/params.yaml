@@ -1,0 +1,23 @@
+# =============================================================================
+# GATK4 HaplotypeCaller — SHARED, species-agnostic defaults (from Anto).
+# Per-species priors (heterozygosity / indel-heterozygosity) are NOT here —
+# they live in config/species/*.yaml. Do not hard-code them in this file.
+# =============================================================================
+haplotypecaller:
+  emit_ref_confidence: "GVCF"        # -ERC GVCF
+  kmer_size: [10, 25, 40]            # --kmer-size 10 --kmer-size 25 --kmer-size 40
+  dont_use_soft_clipped_bases: true  # --dont-use-soft-clipped-bases
+  min_assembly_region_size: 100      # --min-assembly-region-size 100
+  do_not_run_physical_phasing: true  # --do-not-run-physical-phasing
+  base_quality_score_threshold: 12   # --base-quality-score-threshold 12
+  min_base_quality_score: 5          # -mbq 5
+  disable_read_filter: ["MappingQualityReadFilter"]  # -DF MappingQualityReadFilter
+
+# bcftools arm of the consensus (kept from the original pipeline)
+bcftools:
+  mpileup_threads: 2
+  call_annotations: "FORMAT/GQ,FORMAT/GP,INFO/PV4"
+
+# Consensus = GATK genotypes restricted to bcftools-called positions
+consensus:
+  method: "gatk_intersect_bcftools_positions"

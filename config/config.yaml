@@ -1,0 +1,43 @@
+# =============================================================================
+# plasmo-call — main configuration
+# Copy/edit this file for your run. NOTHING here should contain institute
+# paths, accounts, or storage flags (those live in profiles/, see README).
+# =============================================================================
+
+# ---- Input data -------------------------------------------------------------
+# Directory of paired FASTQs named {sample}_1.fastq.gz / {sample}_2.fastq.gz
+source_dir: ""            # e.g. "data/fastq"
+
+# ---- Reference genome (malaria default expected; keep configurable) ---------
+reference:
+  fasta: ""               # e.g. "reference/PknowlesiA1H1.fasta"  (.fai + .dict auto-made)
+  bed:   ""               # intervals/contigs bed for job subsetting
+
+# ---- Aligner ----------------------------------------------------------------
+aligner: "bwa"            # "bwa" (bwa mem) | "bwa-mem2"  (drop-in, same output)
+
+# ---- BQSR / known variants --------------------------------------------------
+# mode:
+#   auto         -> if known_variants below is blank => bootstrap; else known_sites
+#                   (the chosen path is logged LOUDLY at run start)
+#   known_sites  -> use the supplied known_variants VCF(s); error if none given
+#   bootstrap    -> ignore any VCF; call w/ BQSR off -> hard-filter -> use as known-sites
+#   off          -> skip BQSR entirely
+bqsr:
+  mode: "auto"
+  known_variants: []      # e.g. ["reference/known_sites.vcf.gz"]
+  bootstrap:
+    iterations: 1         # 1 = single bootstrap pass; >1 to iterate
+    # hard-filter expression used to build the high-confidence bootstrap set
+    snv_filter:  "QD<2.0 || FS>60.0 || MQ<40.0 || MQRankSum<-12.5 || ReadPosRankSum<-8.0"
+    indel_filter: "QD<2.0 || FS>200.0 || ReadPosRankSum<-20.0"
+
+# ---- Species preset (HaplotypeCaller priors) --------------------------------
+# Points at a file in config/species/. vivax is the ONLY documented preset.
+# knowlesi/malariae/ovale ship as TBD stubs — set priors before using them.
+species: "vivax"          # vivax | knowlesi | malariae | ovale
+
+# ---- Resources (logical; mapped to scheduler in profiles/) ------------------
+threads:
+  bwa: 5
+  sort: 5
