@@ -1,26 +1,43 @@
 # =============================================================================
-# plasmo-call — pixi manifest (bioinformatics tools)
-# Versions are placeholders to be PINNED + locked (pixi.lock) during the
-# local build. GATK3 is intentionally gone; this is a GATK4 pipeline.
-# Environment substrate (pixi instance + PBS/SLURM profiles) comes from vvg-box;
-# install.sh bootstraps that. This manifest pins the calling tools themselves.
+# plasmo-call — pixi manifest (variant-calling tools)
+# Pinned for reproducibility; pixi.lock is the source of truth.
+# GATK3 is intentionally absent — this is a GATK4 pipeline.
+# Environment substrate (pixi + auto-detecting PBS/SLURM profiles) comes from
+# vvg-box, bootstrapped by install.sh into ./box/.
 # =============================================================================
 [workspace]
-name = "plasmo-call"
+name     = "plasmo-call"
 channels = ["conda-forge", "bioconda"]
 platforms = ["linux-64", "osx-64", "osx-arm64"]
 
+# Tools available on every supported platform.
 [dependencies]
-snakemake-minimal = ">=8"     # cluster-generic executor (matches vvg-box profiles)
-gatk4             = "*"        # PIN during build (Java 17 runtime pulled in)
-bcftools          = "*"        # PIN
-samtools          = "*"        # PIN
-bwa               = "*"        # PIN
-bwa-mem2          = "*"        # optional aligner toggle
-picard            = "*"        # PIN (MarkDuplicates)
-python            = ">=3.11"
-pandas            = "*"        # Snakefile interval wrangling
+snakemake-minimal = ">=8.27,<9"
+gatk4             = "4.6.2.*"
+bcftools          = "1.21.*"
+samtools          = "1.21.*"
+bwa               = "0.7.18.*"
+picard            = "3.3.*"
+python            = "3.12.*"
+pandas            = "2.2.*"
+
+# bwa-mem2 uses x86 SIMD; bioconda has no osx-arm64 build. The aligner is a
+# config toggle (config/config.yaml: aligner = "bwa" | "bwa-mem2"), so on
+# osx-arm64 you can dev against the bwa path only.
+[target.linux-64.dependencies]
+bwa-mem2 = "2.2.1.*"
+
+[target.osx-64.dependencies]
+bwa-mem2 = "2.2.1.*"
 
 [tasks]
-# convenience entrypoints — wired up during build
-# run-local = "snakemake --cores 4 --use-conda ..."
+# Print resolved versions of every calling tool (used by install.sh + docs).
+# Delegated to a real bash script — pixi's task shell doesn't handle `2>&1 |`.
+versions = "bash scripts/versions.sh"
+
+# Local-mode run (no scheduler). Override cores with the CORES env var:
+#   `CORES=8 pixi run run-local`.
+run-local = { cmd = "snakemake --cores ${CORES} --snakefile workflow/Snakefile --configfile config/config.yaml", env = { CORES = "4" } }
+
+# Dry-run / DAG parse check (used by acceptance + CI).
+dry-run = "snakemake -n --snakefile workflow/Snakefile --configfile config/config.yaml"

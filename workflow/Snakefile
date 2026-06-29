@@ -26,6 +26,11 @@ configfile: "config/config.yaml"
 # include: "rules/calling_bcftools.smk"# mpileup|call per interval
 # include: "rules/consensus.smk"       # GATK ∩ bcftools positions -> concat
 
+# Real target (wired up once mapping/calling rules land):
+#   "output/calling/consensus/Consensus.vcf.gz"
+# Skeleton: rule all is empty until source_dir is set and rules are included.
+# This keeps `snakemake -n` clean against a stock checkout.
 rule all:
     input:
-        "output/calling/consensus/Consensus.vcf.gz"
+        [] if not config.get("source_dir") else
+        ["output/calling/consensus/Consensus.vcf.gz"]
