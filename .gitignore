@@ -26,6 +26,9 @@ test/*
 .pixi/
 # NOTE: pixi.lock is intentionally COMMITTED for reproducibility.
 
+# ---- self-contained vvg-box install (made by install.sh, never committed) ----
+box/
+
 # ---- Secrets / site config (never commit) ----
 .env .env.* *.key *.pem credentials* *secret*
 # Filled-in site profiles with real account/queue/storage/email:
