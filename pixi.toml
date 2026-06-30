@@ -47,3 +47,7 @@ dry-run = "snakemake -n --snakefile workflow/Snakefile --configfile config/confi
 test-setup = "python test/generate-fixtures.py"
 smoke-test = "bash scripts/smoke-test.sh"
 smoke-dry  = "snakemake -n --snakefile workflow/Snakefile --configfile config/config.yaml --configfile test/config.yaml"
+
+# BQSR acceptance: bootstrap mode end-to-end, then re-run mode=known_sites
+# against the bootstrap's filtered VCFs. Single script so it's one command.
+bqsr-acceptance = "bash scripts/bqsr-acceptance.sh"

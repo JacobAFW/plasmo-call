@@ -63,7 +63,55 @@ Direct renames seen in the port:
   indel realignment. Just remove the rules; no replacement command is needed.
 - `PrintReads` for the "apply BQSR" step
   Replaced by **`ApplyBQSR`**. `BaseRecalibrator` is still the same name.
-  (We're not wiring BQSR until the next prompt, but flagging this here.)
+  Switched in Prompt C.
+
+## BQSR specifics (Prompt C)
+
+Args hit during the BQSR port:
+
+| GATK 3.8                            | GATK 4                                       |
+|-------------------------------------|----------------------------------------------|
+| `-T BaseRecalibrator`               | `gatk BaseRecalibrator` (positional, no -T)  |
+| `-knownSites known.vcf`             | `--known-sites known.vcf` (repeatable)       |
+| `-T PrintReads … -BQSR table`       | `gatk ApplyBQSR --bqsr-recal-file table`     |
+| `-T SelectVariants --selectType SNP`| `gatk SelectVariants --select-type-to-include SNP` |
+| `-T VariantFiltration --filterExpression "EXPR" --filterName "name"` | `gatk VariantFiltration --filter-expression "EXPR" --filter-name name` |
+
+### Quirks worth knowing
+
+- **ApplyBQSR writes `<name>.bai`, not `<name>.bam.bai`.**
+  GATK 4 follows the Picard naming convention (drop `.bam`, append `.bai`)
+  rather than the samtools convention. Tools that expect the samtools form
+  (htslib readers, some VCF callers) silently miss the index. plasmo-call
+  adds a tiny `recal_bam_index` rule that drops a `.bam.bai` symlink next
+  to it so both lookups work.
+
+- **BaseRecalibrator on tiny data.** With very small inputs (the bundled
+  smoke fixture is 9 kb × 2 samples × 15× cov ≈ 270 kb of read data) and a
+  single bootstrap SNV in the known-sites mask, BaseRecalibrator still
+  produces a usable recal table — but the recalibrated quality scores can
+  collapse far enough that HaplotypeCaller stops calling the bootstrap
+  variant in the main pass. That's correct GATK behaviour, not a pipeline
+  bug; it surfaces because the synthetic reads have a flat Q40 quality
+  string that bears no relation to the injected 0.2 % error. Real-world
+  WGS depths and quality strings make this a non-issue.
+
+- **`--filter-expression` is JEXL, not bash.** The original
+  Plasmodium-tuned expressions (`QD<2.0 || FS>60.0 || ...`) are valid JEXL
+  and need to be passed wrapped in single quotes through the Snakemake
+  shell directive — Snakemake's default `bash -c` will otherwise try to
+  interpret `||` as a shell operator.
+
+- **`SelectVariants --exclude-filtered` is the "keep PASS" gate.** GATK 4
+  did not change this from 3.x; just flagging because plasmo-call's
+  bootstrap-filter chain uses the three-step `select → filter → select`
+  pattern, and the third call's `--exclude-filtered` is the one that
+  actually drops the FAILs.
+
+- **`-L reference.bed` is honoured by both BaseRecalibrator and
+  ApplyBQSR.** The predecessor passed it to both; plasmo-call does the
+  same. Without it, BR scans every contig in the BAM header (slow on real
+  references with decoys/alts).
 
 ## Output indexing quirk worth knowing
 

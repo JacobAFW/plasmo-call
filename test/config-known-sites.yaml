@@ -1,0 +1,8 @@
+# Test overlay: BQSR via known_sites, pointing at the VCF the bootstrap pass
+# produced on a prior run. Run scripts/bqsr-acceptance.sh — it builds the VCF
+# first and then re-runs with this config.
+bqsr:
+  mode: "known_sites"
+  known_variants:
+    - "test/known_sites/snvs.vcf.gz"
+    - "test/known_sites/indels.vcf.gz"

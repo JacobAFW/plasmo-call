@@ -1,0 +1,5 @@
+# Test overlay: BQSR mode = auto with NO known_variants.
+# Expectation: resolver picks 'bootstrap' and logs it loudly.
+bqsr:
+  mode: "auto"
+  known_variants: []

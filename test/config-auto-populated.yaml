@@ -1,0 +1,7 @@
+# Test overlay: BQSR mode = auto WITH known_variants populated.
+# Expectation: resolver picks 'known_sites' and logs it loudly.
+bqsr:
+  mode: "auto"
+  known_variants:
+    - "test/known_sites/snvs.vcf.gz"
+    - "test/known_sites/indels.vcf.gz"

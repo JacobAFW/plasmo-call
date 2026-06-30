@@ -6,13 +6,18 @@ completes fast end-to-end.
 
 ## What's tracked
 
-| File                     | Purpose                                              |
-|--------------------------|------------------------------------------------------|
-| `generate-fixtures.py`   | Stdlib-only generator: 2 synthetic chroms + 2 samples |
-| `config.yaml`            | Overlay config (source_dir, reference, aligner=bwa)  |
-| `README.md`              | This file                                            |
+| File                          | Purpose                                              |
+|-------------------------------|------------------------------------------------------|
+| `generate-fixtures.py`        | Stdlib-only generator: 2 synthetic chroms + 2 samples |
+| `config.yaml`                 | Base overlay: source_dir, reference, aligner=bwa, mode=off |
+| `config-bootstrap.yaml`       | BQSR mode = bootstrap (no external VCF)              |
+| `config-known-sites.yaml`     | BQSR mode = known_sites (points at `test/known_sites/`) |
+| `config-auto-empty.yaml`      | BQSR mode = auto, no known_variants → expects bootstrap |
+| `config-auto-populated.yaml`  | BQSR mode = auto, known_variants set → expects known_sites |
+| `README.md`                   | This file                                            |
 
-Everything else (`reference/`, `fastq/`, `output/`) is generated and gitignored.
+Everything else (`reference/`, `fastq/`, `output/`, `known_sites/`) is generated
+and gitignored.
 
 ## Run the smoke test
 
@@ -38,7 +43,31 @@ pixi run -- snakemake --cores 4 \
 - Calling: GATK4 `HaplotypeCaller -ERC GVCF` (Anto params + vivax priors)
   → `CombineGVCFs` → `GenotypeGVCFs` per chromosome
 
-BQSR, bcftools arm, and consensus + concat are deferred to later milestones.
+bcftools arm + consensus + concat are deferred to a later milestone.
+
+## BQSR acceptance (runs all four modes)
+
+```bash
+pixi run bqsr-acceptance     # bootstrap → known_sites → auto×2 banners
+```
+
+That script:
+1. Runs `bqsr.mode=bootstrap` end-to-end on the synthetic data
+   (27 jobs: bootstrap HC + filter → BR/ApplyBQSR → main HC chain).
+2. Copies the bootstrap-produced filtered VCFs into `test/known_sites/`.
+3. Re-runs with `bqsr.mode=known_sites` against those VCFs
+   (21 jobs — no bootstrap stage).
+4. Dry-runs `bqsr.mode=auto` with both empty and populated `known_variants`
+   to surface the resolver's banner (`>> BQSR mode = bootstrap (from auto ...)`
+   vs `>> BQSR mode = known_sites (from auto ...)`).
+
+You can also run each mode by hand:
+
+```bash
+pixi run -- snakemake --cores 4 \
+  --snakefile workflow/Snakefile \
+  --configfile config/config.yaml test/config.yaml test/config-bootstrap.yaml
+```
 
 ## Dataset shape (deterministic, seed 20260629)
 

@@ -1,0 +1,4 @@
+# Test overlay: BQSR via bootstrap (no external known-sites VCF).
+# Layered on top of test/config.yaml.
+bqsr:
+  mode: "bootstrap"

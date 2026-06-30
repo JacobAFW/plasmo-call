@@ -24,9 +24,9 @@ aligner: "bwa"            # "bwa" (bwa mem) | "bwa-mem2"  (drop-in, same output)
 #   bootstrap    -> ignore any VCF; call w/ BQSR off -> hard-filter -> use as known-sites
 #   off          -> skip BQSR entirely
 bqsr:
-  # Milestone B ships with BQSR off — the recalibration + bootstrap rules
-  # land in the next prompt. Switch to "auto"/"known_sites"/"bootstrap" once
-  # rules/bqsr.smk is wired up.
+  # Default OFF for the safest run. Flip to auto/known_sites/bootstrap when
+  # you have decided which calibration path you want. The resolved mode is
+  # printed as a banner at workflow start (stderr) — never silent.
   mode: "off"
   known_variants: []      # e.g. ["reference/known_sites.vcf.gz"]
   bootstrap:
@@ -36,9 +36,11 @@ bqsr:
     indel_filter: "QD<2.0 || FS>200.0 || ReadPosRankSum<-20.0"
 
 # ---- Species preset (HaplotypeCaller priors) --------------------------------
-# Points at a file in config/species/. vivax is the ONLY documented preset.
-# knowlesi/malariae/ovale ship as TBD stubs — set priors before using them.
-species: "vivax"          # vivax | knowlesi | malariae | ovale
+# Points at a file in config/species/. NO default — you MUST choose explicitly,
+# so non-vivax data can never be silently called with vivax priors.
+# vivax is the ONLY documented preset (0.0029 / 0.0017); knowlesi/malariae/ovale
+# ship as TBD stubs that hard-fail until you set their priors.
+species: ""               # REQUIRED: vivax | knowlesi | malariae | ovale
 
 # ---- Resources (logical; mapped to scheduler in profiles/) ------------------
 threads:

@@ -16,8 +16,8 @@ configfile: "config/config.yaml"
 
 include: "rules/common.smk"          # config load + sample/interval wrangling
 include: "rules/mapping.smk"         # bwa / bwa-mem2, sort, markdup, reheader
+include: "rules/bqsr.smk"            # BaseRecalibrator/ApplyBQSR (+ bootstrap)
 include: "rules/calling_gatk.smk"    # HC -> CombineGVCFs -> GenotypeGVCFs
-# include: "rules/bqsr.smk"            # next prompt
 # include: "rules/calling_bcftools.smk"# next prompt
 # include: "rules/consensus.smk"       # next prompt
 

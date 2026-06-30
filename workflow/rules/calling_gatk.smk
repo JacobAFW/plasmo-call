@@ -21,41 +21,29 @@
 # ---- Helpers ---------------------------------------------------------------
 
 def _hc_input_bam(wildcards):
-    """Pick the BAM that feeds HaplotypeCaller, gated on bqsr.mode.
+    """Pick the BAM that feeds HaplotypeCaller, gated on the resolved BQSR_MODE.
 
-    Milestone B: only 'off' is wired; the recalibrated path lands with the
-    BQSR rules (next prompt). Snakemake will surface MissingInputException
-    if someone flips the mode early.
+    off  -> dedup'd / reheadered BAM straight from mapping.smk.
+    else -> recalibrated BAM produced by rules/bqsr.smk's ApplyBQSR.
     """
-    if config.get("bqsr", {}).get("mode") == "off":
+    if BQSR_MODE == "off":
         return f"output/bam/{wildcards.sample}.bam"
     return f"output/bam_recal/{wildcards.sample}_recalibrated.bam"
 
-def _hc_params_str() -> str:
-    """Render the shared HaplotypeCaller flags from params.yaml + species priors."""
-    p = config["params"]["haplotypecaller"]
-    sp = config["species_priors"]
-    parts = [
-        f"--emit-ref-confidence {p['emit_ref_confidence']}",
-        *[f"--kmer-size {k}" for k in p["kmer_size"]],
-        "--dont-use-soft-clipped-bases" if p.get("dont_use_soft_clipped_bases") else "",
-        f"--min-assembly-region-size {p['min_assembly_region_size']}",
-        "--do-not-run-physical-phasing" if p.get("do_not_run_physical_phasing") else "",
-        f"--base-quality-score-threshold {p['base_quality_score_threshold']}",
-        f"-mbq {p['min_base_quality_score']}",
-        *[f"-DF {f}" for f in p.get("disable_read_filter", [])],
-        f"--heterozygosity {sp['heterozygosity']}",
-        f"--indel-heterozygosity {sp['indel_heterozygosity']}",
-    ]
-    return " ".join(x for x in parts if x)
+def _hc_input_bai(wildcards):
+    """Companion to _hc_input_bam: list the .bai alongside so snakemake tracks it."""
+    if BQSR_MODE == "off":
+        return f"output/bam/{wildcards.sample}.bam.bai"
+    return f"output/bam_recal/{wildcards.sample}_recalibrated.bam.bai"
 
-HC_PARAMS = _hc_params_str()
+# HC_PARAMS is defined in common.smk so bqsr.smk (bootstrap HC) can share it.
 
 # ---- HaplotypeCaller (per sample → GVCF) -----------------------------------
 
 rule haplotype_caller:
     input:
         bam   = _hc_input_bam,
+        bai   = _hc_input_bai,
         fasta = REF_FASTA,
         fai   = REF_FAI,
         dict_ = REF_DICT,
