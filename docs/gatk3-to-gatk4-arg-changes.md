@@ -113,6 +113,52 @@ Args hit during the BQSR port:
   same. Without it, BR scans every contig in the BAM header (slow on real
   references with decoys/alts).
 
+## bcftools arm + consensus (Prompt D)
+
+The bcftools arm and the consensus/concat step aren't GATK renames, but
+they came with their own quirks worth capturing.
+
+### bcftools mpileup|call
+
+- `bcftools call -m -Oz -a FORMAT/GQ,FORMAT/GP,INFO/PV4 -v` matches the
+  predecessor exactly. `-v` is variants-only output; on synthetic /
+  low-coverage data this can yield an empty VCF for a whole chromosome
+  and force downstream handling (see below).
+- The predecessor scattered per-`CHROMOSOME_INTERVALS` entry (10-way
+  split for long chroms, whole for short); plasmo-call preserves the
+  same scatter using Snakemake wildcards. The wildcard value contains
+  `:` and `-` (e.g. `chr1:1-5000`), so an explicit
+  `wildcard_constraints: chromosome = r"[^:/]+"` is needed to keep
+  Snakemake from ambiguously matching `bcftools_genotyped_chr1:1-5000.vcf.gz`
+  under the per-chromosome concat rule.
+- Predecessor's `bam_input_list` used `glob.glob('output/bam_recal/*_recalibrated.bam')`
+  at rule-runtime to build the `-b` list. That's fragile — any stray
+  BAM in the dir gets picked up. plasmo-call builds the list
+  deterministically from `all_sample_bams()` (mode-aware helper in
+  common.smk) so both calling arms are guaranteed to consume the same
+  set of BAMs.
+
+### Position-based consensus
+
+- The predecessor's method — `bcftools query -f '%CHROM\t%POS\n' bcf.vcf > pos.txt`
+  then `bcftools filter -R pos.txt gatk.vcf` — is preserved exactly.
+  Two-column (chrom, pos) is a valid `-R` input to `bcftools filter`;
+  `-R` treats each pair as a 1-bp region.
+- **`bcftools filter -R` fails hard on an empty regions file** with
+  "Failed to read the regions" and a non-zero exit — which snakemake's
+  `set -euo pipefail` correctly propagates. When the bcftools arm calls
+  nothing on a chromosome (common on synthetic flat-Q fixtures, rare on
+  real WGS), the pos.txt is empty and the rule dies. plasmo-call guards
+  with `if [ -s pos.txt ]` and falls back to `bcftools view --header-only`
+  for the consensus VCF, preserving the intersection semantics
+  (`empty ∩ anything = empty`) without introducing an allele-aware
+  join. The guard fires transparently on real data because pos.txt
+  will not be empty there.
+- The `-R` intersection is **position-only**, not allele-aware. A GATK
+  record at a bcftools position passes even if its ALT allele differs.
+  Predecessor behaved the same; do not change without an explicit
+  decision.
+
 ## Output indexing quirk worth knowing
 
 `CombineGVCFs` in GATK 4.6.x on `osx-arm64` doesn't always drop the `.tbi`

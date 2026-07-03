@@ -187,6 +187,29 @@ def known_sites_vcfs() -> list[str]:
 def known_sites_tbis() -> list[str]:
     return [f"{v}.tbi" for v in known_sites_vcfs()]
 
+# ---- Mode-aware sample BAM path (single source of truth) -------------------
+# calling_gatk.smk (main HC) and calling_bcftools.smk MUST call on the same
+# BAMs; this helper is the only place that decides which. Keep it here.
+
+def sample_bam_path(sample: str) -> str:
+    if BQSR_MODE == "off":
+        return f"output/bam/{sample}.bam"
+    return f"output/bam_recal/{sample}_recalibrated.bam"
+
+def all_sample_bams() -> list[str]:
+    return [sample_bam_path(s) for s in SAMPLES]
+
+def all_sample_bais() -> list[str]:
+    return [f"{p}.bai" for p in all_sample_bams()]
+
+# ---- Wildcard constraints --------------------------------------------------
+# `intervals` looks like "chr1:1-5000"; `chromosome` is just "chr1". Constrain
+# `chromosome` to reject the ':' so bcftools_genotyped_chr1:1-5000.vcf.gz
+# can't be ambiguously matched by the per-chrom concat rule.
+wildcard_constraints:
+    chromosome = r"[^:/]+",
+    intervals  = r"[^/]+",
+
 # ---- Shared HaplotypeCaller flag string -------------------------------------
 # Used by both the main HC rule (calling_gatk.smk) and the bootstrap HC rule
 # (bqsr.smk). Lives here because bqsr.smk loads before calling_gatk.smk.

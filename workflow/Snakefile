@@ -1,28 +1,24 @@
 # =============================================================================
 # plasmo-call — Snakefile
-# Milestone B: fastq → mapped/dupmarked BAM → GATK4 GVCF → per-chrom genotyped
-# VCF. BQSR is OFF; bcftools arm + consensus + concat land in later milestones.
+# Full pipeline: fastq → mapped/dupmarked BAM → optional BQSR → GATK4 arm
+# (HC → CombineGVCFs → GenotypeGVCFs per chrom) ‖ bcftools arm (mpileup|call
+# per interval → per-chrom concat) → position-based CONSENSUS per chrom
+# → Consensus.vcf.gz.
 #
-# Target DAG (this milestone):
-#   bwa/bwa-mem2 mem -> samtools sort -> MarkDuplicates -> RG reheader
-#     -> GATK4 HaplotypeCaller (GVCF) -> CombineGVCFs -> GenotypeGVCFs (per chrom)
-#
-# REMOVED vs GATK3 predecessor: RealignerTargetCreator + IndelRealigner.
-# DEFERRED: BQSR rules (rules/bqsr.smk), bcftools arm (rules/calling_bcftools.smk),
-# consensus + concat (rules/consensus.smk), Consensus.vcf.gz target.
+# REMOVED vs GATK3 predecessor: RealignerTargetCreator + IndelRealigner
+# (GATK4 HaplotypeCaller local reassembly subsumes them).
 # =============================================================================
 
 configfile: "config/config.yaml"
 
-include: "rules/common.smk"          # config load + sample/interval wrangling
-include: "rules/mapping.smk"         # bwa / bwa-mem2, sort, markdup, reheader
-include: "rules/bqsr.smk"            # BaseRecalibrator/ApplyBQSR (+ bootstrap)
-include: "rules/calling_gatk.smk"    # HC -> CombineGVCFs -> GenotypeGVCFs
-# include: "rules/calling_bcftools.smk"# next prompt
-# include: "rules/consensus.smk"       # next prompt
+include: "rules/common.smk"           # config load + sample/interval wrangling
+include: "rules/mapping.smk"          # bwa / bwa-mem2, sort, markdup, reheader
+include: "rules/bqsr.smk"             # BaseRecalibrator/ApplyBQSR (+ bootstrap)
+include: "rules/calling_gatk.smk"     # HC -> CombineGVCFs -> GenotypeGVCFs
+include: "rules/calling_bcftools.smk" # mpileup|call per interval -> per-chrom concat
+include: "rules/consensus.smk"        # GATK ∩ bcftools positions -> concat
 
-# Milestone target: one genotyped VCF per chromosome from the GATK arm.
+# Final target: Consensus.vcf.gz.
 rule all:
     input:
-        expand("output/calling/gatk/joint/gatk_genotyped_{chromosome}.vcf.gz",
-               chromosome=CHROMOSOME),
+        "output/calling/consensus/Consensus.vcf.gz",

@@ -20,21 +20,14 @@
 
 # ---- Helpers ---------------------------------------------------------------
 
+# Mode-aware BAM path lives in common.smk (sample_bam_path); the wrappers below
+# just adapt it for Snakemake's wildcards-callable-input contract, and share
+# the choice with calling_bcftools.smk so the two arms can never diverge.
 def _hc_input_bam(wildcards):
-    """Pick the BAM that feeds HaplotypeCaller, gated on the resolved BQSR_MODE.
-
-    off  -> dedup'd / reheadered BAM straight from mapping.smk.
-    else -> recalibrated BAM produced by rules/bqsr.smk's ApplyBQSR.
-    """
-    if BQSR_MODE == "off":
-        return f"output/bam/{wildcards.sample}.bam"
-    return f"output/bam_recal/{wildcards.sample}_recalibrated.bam"
+    return sample_bam_path(wildcards.sample)
 
 def _hc_input_bai(wildcards):
-    """Companion to _hc_input_bam: list the .bai alongside so snakemake tracks it."""
-    if BQSR_MODE == "off":
-        return f"output/bam/{wildcards.sample}.bam.bai"
-    return f"output/bam_recal/{wildcards.sample}_recalibrated.bam.bai"
+    return f"{sample_bam_path(wildcards.sample)}.bai"
 
 # HC_PARAMS is defined in common.smk so bqsr.smk (bootstrap HC) can share it.
 
