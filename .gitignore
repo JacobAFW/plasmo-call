@@ -1,35 +1,62 @@
 # ============================ plasmo-call .gitignore =========================
 # Scripts-only repo. Data, references, secrets, and run outputs stay OUT.
+# IMPORTANT: one pattern PER LINE — space-separated patterns do NOT work in git.
 
 # ---- Sequencing / variant DATA (never commit) ----
-*.fastq *.fastq.gz *.fq *.fq.gz
-*.bam *.bai *.cram *.crai *.sam
-*.vcf *.vcf.gz *.vcf.gz.tbi *.bcf *.g.vcf.gz
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.bam
+*.bai
+*.cram
+*.crai
+*.sam
+*.vcf
+*.vcf.gz
+*.vcf.gz.tbi
+*.bcf
+*.g.vcf.gz
 *.bed.gz
-# Reference genomes & indices (keep README only)
+
+# ---- Reference genomes & indices (keep README only) ----
 reference/*
 !reference/README.md
-*.fasta *.fa *.fasta.* *.fa.* *.fai *.dict *.amb *.ann *.bwt *.pac *.sa *.0123 *.bwt.2bit.64
+*.fasta
+*.fa
+*.fasta.*
+*.fa.*
+*.fai
+*.dict
+*.amb
+*.ann
+*.bwt
+*.pac
+*.sa
+*.0123
+*.bwt.2bit.64
 
 # ---- Known-sites / bootstrap intermediates ----
-*.recal.table *_recal.table
+*.recal.table
+*_recal.table
 
 # ---- Run outputs / working dirs ----
-output/ outputs/ results/ logs/ work/ tmp/
+output/
+outputs/
+results/
+logs/
+work/
+tmp/
 .snakemake/
 
-# ---- Test data payload (keep README + generators tracked, data ignored) ----
+# ---- Test data payload (keep README + generator + configs; data regenerated) ----
 test/*
 !test/README.md
 !test/generate-fixtures.py
-# Base config + per-mode overlays (config-bootstrap.yaml, config-known-sites.yaml,
-# config-auto-empty.yaml, config-auto-populated.yaml).
 !test/config*.yaml
-# Generated fixtures + run outputs stay out:
 test/reference/
 test/fastq/
 test/output/
-# Produced by `pixi run bqsr-acceptance` from bootstrap:
 test/known_sites/
 
 # ---- pixi / conda env (lock IS committed, env dir is not) ----
@@ -40,9 +67,21 @@ test/known_sites/
 box/
 
 # ---- Secrets / site config (never commit) ----
-.env .env.* *.key *.pem credentials* *secret*
-# Filled-in site profiles with real account/queue/storage/email:
-profiles/**/site.local.* profiles/**/*.local.yaml
+.env
+.env.*
+*.key
+*.pem
+credentials*
+*secret*
+profiles/**/site.local.*
+profiles/**/*.local.yaml
 
 # ---- Editor / OS junk ----
-.DS_Store Thumbs.db .idea/ .vscode/ *.swp __pycache__/ *.pyc
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+__pycache__/
+*.pyc
+.fuse_hidden*
