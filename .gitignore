@@ -66,6 +66,9 @@ test/known_sites/
 # ---- self-contained vvg-box install (made by install.sh, never committed) ----
 box/
 
+# ---- provisional / test-only species files (never committed) ----
+config/species/*-provisional.yaml
+
 # ---- Secrets / site config (never commit) ----
 .env
 .env.*
@@ -85,3 +88,9 @@ Thumbs.db
 __pycache__/
 *.pyc
 .fuse_hidden*
+
+# ---- agent worktrees, editor/agent state, alt-named run outputs (commit-guard) ----
+.claude/
+data/
+output*/
+config/config.run-local.yaml

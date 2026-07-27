@@ -232,3 +232,78 @@ def _hc_params_str() -> str:
     return " ".join(x for x in parts if x)
 
 HC_PARAMS = _hc_params_str()
+
+# ---- Joint calling backend --------------------------------------------------
+# Two consolidation backends before GenotypeGVCFs:
+#   * genomicsdb     — GenomicsDBImport per INTERVAL, then GenotypeGVCFs reads
+#                      gendb://<workspace>. Scales to the ~980-sample cohort;
+#                      the default. GenomicsDBImport quirks:
+#                        - workspace path must NOT pre-exist (we `rm -rf` first);
+#                        - one contig per workspace (fine: our intervals are
+#                          single-contig by construction);
+#                        - many samples: use --sample-name-map TSV, not many -V.
+#   * combine_gvcfs  — CombineGVCFs whole-genome (existing behaviour), then
+#                      GenotypeGVCFs -L {interval} on the combined GVCF. Kept as
+#                      a small-cohort / legacy toggle and to validate that the
+#                      genomicsdb swap is behaviour-preserving.
+# Both backends produce per-INTERVAL genotyped VCFs, which are concat'd per
+# chromosome so consensus.smk's per-chrom intersection stays UNCHANGED.
+_VALID_CONSOLIDATIONS = ("genomicsdb", "combine_gvcfs")
+
+def _resolve_joint_calling() -> dict:
+    jc = config.get("joint_calling", {}) or {}
+    consolidation = jc.get("consolidation", "genomicsdb")
+    if consolidation not in _VALID_CONSOLIDATIONS:
+        sys.exit(
+            f"ERROR: config.joint_calling.consolidation must be one of "
+            f"{list(_VALID_CONSOLIDATIONS)}; got {consolidation!r}"
+        )
+    gdb = jc.get("genomicsdb") or {}
+    resolved = {
+        "consolidation":  consolidation,
+        "batch_size":     int(gdb.get("batch_size", 50)),
+        "reader_threads": int(gdb.get("reader_threads", 1)),
+    }
+    bar = "=" * 72
+    print(
+        f"\n{bar}\n[plasmo-call] joint_calling.consolidation = {consolidation}\n{bar}\n",
+        file=sys.stderr,
+    )
+    return resolved
+
+JOINT_CALLING = _resolve_joint_calling()
+
+# ---- Filter tier defaults (Prompt H) ---------------------------------------
+# Two tiers, both always produced (there's no enabled/on-off toggle — that
+# would hide the reproducible base each tier was built from):
+#   * LIGHT — QUAL floor only. vivaxgen-equivalent.
+#   * HARD  — Sanger-style GATK hard filter (QD/FS/MQ).
+# See docs/filter.md for the full rationale (including why MQRankSum /
+# ReadPosRankSum / SOR are shown in the report but NOT filtered — those
+# rank-sum tests are diploid-tuned and don't transfer to haploid Plasmodium).
+_FILTER_DEFAULTS = {
+    "light": {"min_qual": 30},
+    "hard":  {"qd": 15.0, "fs": 1.0, "mq": 40.0},
+}
+
+def _resolve_filter() -> dict:
+    user = config.get("filter", {}) or {}
+    unknown_top = set(user) - set(_FILTER_DEFAULTS)
+    if unknown_top:
+        sys.exit(
+            f"ERROR: unknown key(s) under config.filter: {sorted(unknown_top)}\n"
+            f"       valid keys: {sorted(_FILTER_DEFAULTS)}"
+        )
+    merged: dict = {}
+    for tier, defaults in _FILTER_DEFAULTS.items():
+        tier_user = (user.get(tier) or {})
+        unknown = set(tier_user) - set(defaults)
+        if unknown:
+            sys.exit(
+                f"ERROR: unknown key(s) under config.filter.{tier}: {sorted(unknown)}\n"
+                f"       valid keys: {sorted(defaults)}"
+            )
+        merged[tier] = {**defaults, **tier_user}
+    return merged
+
+FILTER = _resolve_filter()

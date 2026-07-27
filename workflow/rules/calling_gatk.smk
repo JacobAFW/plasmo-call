@@ -1,11 +1,17 @@
 # =============================================================================
 # workflow/rules/calling_gatk.smk
-# GATK4 HaplotypeCaller (-ERC GVCF) → CombineGVCFs → GenotypeGVCFs (per chrom).
+# GATK4 arm: HaplotypeCaller per-sample → consolidation → GenotypeGVCFs per
+# INTERVAL → concat per chromosome. Consolidation backend is selected by
+# config.joint_calling.consolidation (see common.smk / JOINT_CALLING):
 #
-# Shared params from config["params"]["haplotypecaller"] (Anto's tuned set).
-# Per-species priors (--heterozygosity / --indel-heterozygosity) from
-# config["species_priors"]. common.smk has already failed loudly if either is
-# unset on the selected species.
+#   * genomicsdb    — GenomicsDBImport per interval, GenotypeGVCFs on gendb://
+#   * combine_gvcfs — CombineGVCFs whole-genome, GenotypeGVCFs -L per interval
+#
+# Both backends produce identical per-interval outputs
+# (`output/calling/gatk/joint/intervals/gatk_genotyped_intervals_{interval}.vcf.gz`),
+# which are then concat'd to per-chrom VCFs consumed unchanged by consensus.smk.
+#
+# Shared HC params + per-species priors come from common.smk (HC_PARAMS).
 #
 # Differences vs GATK3 predecessor (worth knowing if you compare):
 #   * tool name is positional in GATK4 (HaplotypeCaller, not -T HaplotypeCaller)
@@ -18,6 +24,8 @@
 #     reassembly subsumes them. Hence no rules for them in this file.
 # =============================================================================
 
+localrules: sample_name_map
+
 # ---- Helpers ---------------------------------------------------------------
 
 # Mode-aware BAM path lives in common.smk (sample_bam_path); the wrappers below
@@ -28,8 +36,6 @@ def _hc_input_bam(wildcards):
 
 def _hc_input_bai(wildcards):
     return f"{sample_bam_path(wildcards.sample)}.bai"
-
-# HC_PARAMS is defined in common.smk so bqsr.smk (bootstrap HC) can share it.
 
 # ---- HaplotypeCaller (per sample → GVCF) -----------------------------------
 
@@ -52,7 +58,28 @@ rule haplotype_caller:
         "-O {output.gvcf} "
         "{params.hc_args}"
 
-# ---- CombineGVCFs (all samples → one combined GVCF) ------------------------
+# ---- Sample-name-map TSV (GenomicsDBImport input at scale) ------------------
+# GenomicsDBImport accepts --sample-name-map <TSV> instead of a long chain of
+# `-V`s. At ~980 samples the CLI would otherwise blow past ARG_MAX; the map
+# also lets us swap GVCF paths without touching the rule.
+
+rule sample_name_map:
+    input:
+        gvcfs = expand("output/calling/gatk/gvcf/{sample}.g.vcf.gz", sample=SAMPLES),
+        tbis  = expand("output/calling/gatk/gvcf/{sample}.g.vcf.gz.tbi", sample=SAMPLES),
+    output:
+        tsv = "output/calling/gatk/genomicsdb/sample_name_map.tsv",
+    run:
+        from pathlib import Path
+        Path(output.tsv).parent.mkdir(parents=True, exist_ok=True)
+        with open(output.tsv, "w") as fh:
+            for s, g in zip(SAMPLES, input.gvcfs):
+                fh.write(f"{s}\t{g}\n")
+
+# ---- CombineGVCFs (legacy backend — whole genome → one combined GVCF) -------
+# Only fires when JOINT_CALLING.consolidation == "combine_gvcfs". Semantics
+# unchanged from the previous milestone; kept for small cohorts + as the
+# behaviour-preserving baseline for validating the genomicsdb swap.
 
 rule combine_gvcfs:
     input:
@@ -77,21 +104,110 @@ rule combine_gvcfs:
         "-O {output.gvcf} && "
         "gatk IndexFeatureFile -I {output.gvcf}"
 
-# ---- GenotypeGVCFs (per chromosome) ----------------------------------------
+# ---- GenomicsDBImport (scale backend — per interval workspace) -------------
+# GenomicsDBImport quirks handled here:
+#   * workspace MUST NOT pre-exist — Snakemake's normal directory creation
+#     would collide; we `rm -rf` first so re-runs (and interrupted runs) work.
+#   * one contig per workspace — our intervals are single-contig by construction
+#     (see _load_intervals in common.smk), so this is naturally satisfied.
+#   * sample-name-map TSV instead of --variant/-V — see rule sample_name_map.
+# The workspace directory is the tracked output (`directory(...)`). Colons in
+# `{interval}` (e.g. "LT727648:1-89247") are legal on APFS/ext4 and Snakemake
+# passes them through unchanged — same pattern the bcftools arm already uses.
+
+rule genomicsdb_import:
+    input:
+        gvcfs           = expand("output/calling/gatk/gvcf/{sample}.g.vcf.gz", sample=SAMPLES),
+        tbis            = expand("output/calling/gatk/gvcf/{sample}.g.vcf.gz.tbi", sample=SAMPLES),
+        sample_name_map = "output/calling/gatk/genomicsdb/sample_name_map.tsv",
+        fasta           = REF_FASTA,
+        fai             = REF_FAI,
+        dict_           = REF_DICT,
+    output:
+        workspace = directory("output/calling/gatk/genomicsdb/workspaces/{interval}"),
+    params:
+        batch_size     = JOINT_CALLING["batch_size"],
+        reader_threads = JOINT_CALLING["reader_threads"],
+    shell:
+        # GenomicsDBImport refuses to write into an existing workspace; wipe
+        # then let it create fresh so re-runs on the same interval succeed.
+        "rm -rf {output.workspace} && "
+        "gatk GenomicsDBImport "
+        "--genomicsdb-workspace-path {output.workspace} "
+        "--sample-name-map {input.sample_name_map} "
+        "--batch-size {params.batch_size} "
+        "--reader-threads {params.reader_threads} "
+        "-L {wildcards.interval} "
+        "--tmp-dir /tmp"
+
+# ---- GenotypeGVCFs (per interval, backend-aware input) ---------------------
+# One rule, two input shapes:
+#   * genomicsdb:    -V gendb://<workspace>       (workspace is interval-scoped)
+#   * combine_gvcfs: -V <combined.g.vcf.gz> -L    (subset the combined GVCF)
+# Selection is done at DAG-build time via a callable input (Snakemake evaluates
+# the callable once per (rule, wildcards) — the wrong backend's inputs are
+# never requested, so no phantom jobs get scheduled).
+
+def _genotype_gvcfs_input(wildcards):
+    common = {
+        "fasta": REF_FASTA,
+        "fai":   REF_FAI,
+        "dict_": REF_DICT,
+    }
+    if JOINT_CALLING["consolidation"] == "genomicsdb":
+        return {
+            **common,
+            "workspace": f"output/calling/gatk/genomicsdb/workspaces/{wildcards.interval}",
+        }
+    return {
+        **common,
+        "gvcf": "output/calling/gatk/gvcf/GATK_combined.g.vcf.gz",
+        "tbi":  "output/calling/gatk/gvcf/GATK_combined.g.vcf.gz.tbi",
+    }
+
+def _genotype_gvcfs_variant_arg(wildcards):
+    if JOINT_CALLING["consolidation"] == "genomicsdb":
+        return f"gendb://output/calling/gatk/genomicsdb/workspaces/{wildcards.interval}"
+    return "output/calling/gatk/gvcf/GATK_combined.g.vcf.gz"
 
 rule genotype_gvcfs:
     input:
-        gvcf  = "output/calling/gatk/gvcf/GATK_combined.g.vcf.gz",
-        tbi   = "output/calling/gatk/gvcf/GATK_combined.g.vcf.gz.tbi",
-        fasta = REF_FASTA,
-        fai   = REF_FAI,
-        dict_ = REF_DICT,
+        unpack(_genotype_gvcfs_input),
+    output:
+        vcf = temp("output/calling/gatk/joint/intervals/gatk_genotyped_intervals_{interval}.vcf.gz"),
+        tbi = temp("output/calling/gatk/joint/intervals/gatk_genotyped_intervals_{interval}.vcf.gz.tbi"),
+    params:
+        variant_arg = _genotype_gvcfs_variant_arg,
+    shell:
+        # -L is redundant for the gendb backend (the workspace is already
+        # interval-scoped) but harmless — GATK filters to the specified
+        # interval either way, so keeping -L for BOTH backends makes the two
+        # code paths symmetric and easier to reason about.
+        "gatk GenotypeGVCFs "
+        "-R {input.fasta} "
+        "-V {params.variant_arg} "
+        "-L {wildcards.interval} "
+        "-O {output.vcf}"
+
+# ---- Concat a chromosome's interval VCFs → per-chrom joint VCF -------------
+# Same shape as calling_bcftools.smk's concat_bcftools — the two arms stay
+# aligned on the per-chrom output, which is what consensus.smk consumes.
+
+def _gatk_intervals_for_chrom(wildcards):
+    prefix = f"{wildcards.chromosome}:"
+    return [f"output/calling/gatk/joint/intervals/gatk_genotyped_intervals_{iv}.vcf.gz"
+            for iv in CHROMOSOME_INTERVALS if iv.startswith(prefix)]
+
+def _gatk_interval_tbis_for_chrom(wildcards):
+    return [f"{v}.tbi" for v in _gatk_intervals_for_chrom(wildcards)]
+
+rule concat_gatk_chrom:
+    input:
+        vcfs = _gatk_intervals_for_chrom,
+        tbis = _gatk_interval_tbis_for_chrom,
     output:
         vcf = "output/calling/gatk/joint/gatk_genotyped_{chromosome}.vcf.gz",
         tbi = "output/calling/gatk/joint/gatk_genotyped_{chromosome}.vcf.gz.tbi",
     shell:
-        "gatk GenotypeGVCFs "
-        "-R {input.fasta} "
-        "-V {input.gvcf} "
-        "-L {wildcards.chromosome} "
-        "-O {output.vcf}"
+        "bcftools concat -Oz -o {output.vcf} {input.vcfs} && "
+        "bcftools index -t -o {output.tbi} {output.vcf}"
