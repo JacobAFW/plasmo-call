@@ -55,6 +55,12 @@ joint_calling:
   genomicsdb:
     batch_size:     50            # --batch-size for GenomicsDBImport (samples per batch)
     reader_threads:  1            # --reader-threads (bump if I/O-bound reading GVCFs)
+    # tmp_dir is passed to `gatk GenomicsDBImport --tmp-dir`. Local default
+    # is /tmp; on Gadi (PBS) set to "$PBS_JOBFS" for node-local scratch —
+    # GenomicsDBImport writes a lot of scratch and shared filesystems make
+    # it crawl. The value is shell-expanded at rule runtime, so env vars
+    # like $PBS_JOBFS / $TMPDIR resolve correctly.
+    tmp_dir: "/tmp"
 
 # ---- Post-calling filter tiers + funnel stats (Prompt H) -------------------
 # The filter layer consumes ONLY the finished Consensus.vcf.gz — no BAMs, no

@@ -263,6 +263,9 @@ def _resolve_joint_calling() -> dict:
         "consolidation":  consolidation,
         "batch_size":     int(gdb.get("batch_size", 50)),
         "reader_threads": int(gdb.get("reader_threads", 1)),
+        # tmp_dir is shell-expanded at rule runtime; "$PBS_JOBFS" / "$TMPDIR"
+        # resolve in the job's shell. Default "/tmp" for local runs.
+        "tmp_dir":        str(gdb.get("tmp_dir", "/tmp")),
     }
     bar = "=" * 72
     print(

@@ -1,0 +1,91 @@
+# =============================================================================
+# profiles/slurm/config.yaml
+# Snakemake 8 profile for plasmo-call on SLURM clusters.
+#
+# Uses `cluster-generic` + slurm-submit.py in this directory. Site values
+# (partition/account/qos/email) live in `site.local.yaml` (gitignored).
+#
+# Per-rule threads / mem / walltime mirror profiles/pbs/config.yaml so the
+# same job actually costs the same resource whichever scheduler you're on.
+# =============================================================================
+
+executor: "cluster-generic"
+cluster-generic-submit-cmd: "profiles/slurm/slurm-submit.py"
+jobscript: "profiles/slurm/slurm-jobscript.sh"
+jobs: 200
+latency-wait: 60
+verbose: true
+notemp: true
+
+default-resources:
+  - mem_mb=8192
+  - runtime=720
+
+set-threads:
+  bwa_map: 5
+  mark_duplicates: 2
+  haplotype_caller: 3
+  bootstrap_haplotype_caller: 3
+  base_recalibrator: 2
+  apply_bqsr: 2
+  combine_gvcfs: 3
+  genomicsdb_import: 4
+  genotype_gvcfs: 2
+  concat_gatk_chrom: 2
+  bcftools_caller: 2
+  concat_bcftools: 2
+  consensus_of_vcfs: 2
+  concat_consensus: 2
+  filter_light: 2
+  filter_hard: 2
+  consensus_stats: 2
+
+set-resources:
+  bwa_map:
+    mem_mb: 51200
+    runtime: 1440
+  haplotype_caller:
+    mem_mb: 24576
+    runtime: 2880
+  bootstrap_haplotype_caller:
+    mem_mb: 24576
+    runtime: 2880
+  base_recalibrator:
+    mem_mb: 16384
+    runtime: 1440
+  apply_bqsr:
+    mem_mb: 16384
+    runtime: 1440
+  combine_gvcfs:
+    mem_mb: 24576
+    runtime: 2880
+  genomicsdb_import:
+    mem_mb: 32768
+    runtime: 1440
+  genotype_gvcfs:
+    mem_mb: 16384
+    runtime: 720
+  concat_gatk_chrom:
+    mem_mb: 8192
+    runtime: 360
+  bcftools_caller:
+    mem_mb: 16384
+    runtime: 2880
+  concat_bcftools:
+    mem_mb: 8192
+    runtime: 360
+  consensus_of_vcfs:
+    mem_mb: 8192
+    runtime: 360
+  concat_consensus:
+    mem_mb: 8192
+    runtime: 360
+  filter_light:
+    mem_mb: 8192
+    runtime: 360
+  filter_hard:
+    mem_mb: 16384
+    runtime: 360
+  consensus_stats:
+    mem_mb: 8192
+    runtime: 360

@@ -13,6 +13,10 @@ platforms = ["linux-64", "osx-64", "osx-arm64"]
 # Tools available on every supported platform.
 [dependencies]
 snakemake-minimal = ">=8.27,<9"
+# Cluster-generic executor plugin — required to activate profiles/pbs +
+# profiles/slurm on the HPC. Snakemake 8 dropped cluster-generic from core;
+# it's now a plugin. Pinned to avoid silent breaking on upstream churn.
+snakemake-executor-plugin-cluster-generic = ">=1.0,<2"
 gatk4             = "4.6.2.*"
 bcftools          = "1.21.*"
 samtools          = "1.21.*"
@@ -20,6 +24,7 @@ bwa               = "0.7.18.*"
 picard            = "3.3.*"
 python            = "3.12.*"
 pandas            = "2.2.*"
+pyyaml            = ">=6.0,<7"   # profiles/*/*-submit.py read site.local.yaml
 
 # bwa-mem2 uses x86 SIMD; bioconda has no osx-arm64 build. The aligner is a
 # config toggle (config/config.yaml: aligner = "bwa" | "bwa-mem2"), so on

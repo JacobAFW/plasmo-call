@@ -1,0 +1,108 @@
+# =============================================================================
+# profiles/pbs/config.yaml
+# Snakemake 8 profile for plasmo-call on PBS Pro / OpenPBS.
+#
+# Uses the `cluster-generic` executor with the self-contained pbs-submit.py
+# in this directory. Site-specific values (account/queue/storage/email) live
+# in `site.local.yaml` — gitignored, never committed. pbs-submit.py reads
+# that YAML at submit time.
+#
+# Per-rule resources are set here via `set-threads` + `set-resources` so
+# the same profile drives any of the pipeline's rules without a separate
+# cluster.yaml. Values ported from the known-working legacy cluster.yaml
+# (JacobAFW/Variant_Calling_Pipeline, PBS on the target HPC) and adapted
+# to the CURRENT rule set (no RealignerTargetCreator; new GenomicsDBImport /
+# per-interval GenotypeGVCFs / three filter-tier rules).
+# =============================================================================
+
+executor: "cluster-generic"
+cluster-generic-submit-cmd: "profiles/pbs/pbs-submit.py"
+jobscript: "profiles/pbs/pbs-jobscript.sh"
+jobs: 200
+latency-wait: 60
+verbose: true
+notemp: true                   # don't delete intermediates until run ends
+
+# ---- Default resources (in effect unless a set-resources entry overrides) ---
+# runtime is MINUTES (Snakemake convention). mem_mb is MB.
+default-resources:
+  - mem_mb=8192
+  - runtime=720                # 12h
+
+# ---- Per-rule threads -------------------------------------------------------
+# Mapping and calling are the CPU-heavy rules. concat_/consensus_/filter_ are
+# lightweight bcftools ops that scale poorly with more cores.
+set-threads:
+  bwa_map: 5
+  mark_duplicates: 2
+  haplotype_caller: 3
+  bootstrap_haplotype_caller: 3
+  base_recalibrator: 2
+  apply_bqsr: 2
+  combine_gvcfs: 3
+  genomicsdb_import: 4                # I/O + tiledb writes benefit from >1
+  genotype_gvcfs: 2
+  concat_gatk_chrom: 2
+  bcftools_caller: 2
+  concat_bcftools: 2
+  consensus_of_vcfs: 2
+  concat_consensus: 2
+  filter_light: 2
+  filter_hard: 2
+  consensus_stats: 2
+
+# ---- Per-rule mem + walltime ------------------------------------------------
+# mem_mb: memory in MB (qsub -l mem=<...>MB)
+# runtime: walltime in MINUTES (qsub -l walltime=HH:MM:SS)
+# Ordered heaviest → lightest for readability.
+# Note: snakemake profile expects nested-dict for set-resources (unlike
+# default-resources which takes a list of key=value strings).
+set-resources:
+  bwa_map:
+    mem_mb: 51200                     # 50 GB
+    runtime: 1440                     # 24h
+  haplotype_caller:
+    mem_mb: 24576                     # 24 GB
+    runtime: 2880                     # 48h
+  bootstrap_haplotype_caller:
+    mem_mb: 24576
+    runtime: 2880
+  base_recalibrator:
+    mem_mb: 16384                     # 16 GB
+    runtime: 1440
+  apply_bqsr:
+    mem_mb: 16384
+    runtime: 1440
+  combine_gvcfs:
+    mem_mb: 24576                     # 24 GB (legacy path — modest cohorts)
+    runtime: 2880
+  genomicsdb_import:
+    mem_mb: 32768                     # 32 GB — writes many TileDB fragments
+    runtime: 1440
+  genotype_gvcfs:
+    mem_mb: 16384                     # 16 GB per interval — modest
+    runtime: 720                      # 12h; per-interval is small
+  concat_gatk_chrom:
+    mem_mb: 8192
+    runtime: 360                      # 6h
+  bcftools_caller:
+    mem_mb: 16384
+    runtime: 2880
+  concat_bcftools:
+    mem_mb: 8192
+    runtime: 360
+  consensus_of_vcfs:
+    mem_mb: 8192
+    runtime: 360
+  concat_consensus:
+    mem_mb: 8192
+    runtime: 360
+  filter_light:
+    mem_mb: 8192
+    runtime: 360
+  filter_hard:
+    mem_mb: 16384                     # GATK VariantFiltration on cohort VCF
+    runtime: 360
+  consensus_stats:
+    mem_mb: 8192
+    runtime: 360

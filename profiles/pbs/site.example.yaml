@@ -1,0 +1,37 @@
+# =============================================================================
+# plasmo-call — PBS site config TEMPLATE
+#
+# COPY this to `site.local.yaml` and fill in your cluster's values. The
+# `.local.yaml` file is GITIGNORED (see profiles/**/*.local.yaml pattern in
+# .gitignore) and MUST NOT be committed — it's the sole place site-specific
+# values live. Nothing in the committed tree contains an account, queue,
+# storage flag, or email.
+#
+# Every value here is a PLACEHOLDER. pbs-submit.py reads this file at
+# submission time and injects the values into qsub. Missing values are
+# omitted from the qsub command (so, e.g., leaving `email:` blank simply
+# means no mail).
+# =============================================================================
+
+# ---- Account / queue / storage ----------------------------------------------
+account:  "<NCI_PROJECT_CODE>"        # e.g. "aa00"; qsub -A
+queue:    "<QUEUE_NAME>"              # e.g. "normal"; qsub -q
+# storage: passed as `-l storage=...`. On Gadi (NCI) the classic pattern is
+# `gdata/<proj>+scratch/<proj>`; leave empty on clusters that don't need it.
+storage:  "gdata/<proj>+scratch/<proj>"
+
+# ---- Notifications ----------------------------------------------------------
+email:    "<you@institute.edu>"       # qsub -M; leave blank for no mail
+mailon:   "a"                          # qsub -m; a=abort, b=begin, e=end, n=none
+
+# ---- Scratch / tmp for GenomicsDBImport -------------------------------------
+# The workflow's `config.joint_calling.genomicsdb.tmp_dir` is what actually
+# gets passed to `gatk GenomicsDBImport --tmp-dir`. On Gadi override the
+# workflow config to "$PBS_JOBFS" (node-local scratch — GenomicsDBImport
+# writes a lot of scratch and shared filesystems make it crawl). Recorded
+# here so this file is the ONE PLACE that documents site-specific paths.
+#
+# Set it via CLI: pixi run snakemake --profile profiles/pbs \
+#   --config joint_calling='{genomicsdb: {tmp_dir: "$PBS_JOBFS"}}'
+# or via a run-local config overlay (config/config.run-local.yaml — gitignored).
+tmp_dir_hint: "$PBS_JOBFS"

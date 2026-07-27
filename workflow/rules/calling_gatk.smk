@@ -128,6 +128,9 @@ rule genomicsdb_import:
     params:
         batch_size     = JOINT_CALLING["batch_size"],
         reader_threads = JOINT_CALLING["reader_threads"],
+        # tmp_dir: shell-expanded at runtime, so "$PBS_JOBFS" / "$TMPDIR"
+        # resolve inside the scheduler job. See config.joint_calling.genomicsdb.tmp_dir.
+        tmp_dir        = JOINT_CALLING["tmp_dir"],
     shell:
         # GenomicsDBImport refuses to write into an existing workspace; wipe
         # then let it create fresh so re-runs on the same interval succeed.
@@ -138,7 +141,7 @@ rule genomicsdb_import:
         "--batch-size {params.batch_size} "
         "--reader-threads {params.reader_threads} "
         "-L {wildcards.interval} "
-        "--tmp-dir /tmp"
+        "--tmp-dir {params.tmp_dir}"
 
 # ---- GenotypeGVCFs (per interval, backend-aware input) ---------------------
 # One rule, two input shapes:

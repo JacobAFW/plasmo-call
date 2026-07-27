@@ -1,0 +1,32 @@
+# =============================================================================
+# plasmo-call — SLURM site config TEMPLATE
+#
+# COPY this to `site.local.yaml` and fill in your cluster's values. The
+# `.local.yaml` file is GITIGNORED (see profiles/**/*.local.yaml pattern in
+# .gitignore) and MUST NOT be committed — it's the sole place site-specific
+# values live. Nothing in the committed tree contains an account, partition,
+# QoS, or email.
+#
+# Every value here is a PLACEHOLDER. slurm-submit.py reads this file at
+# submission time and injects the values into sbatch. Missing values are
+# omitted from the sbatch command.
+# =============================================================================
+
+# ---- Partition / account / QoS ----------------------------------------------
+partition: "<PARTITION>"              # sbatch -p; e.g. "compute", "normal"
+account:   "<PROJECT>"                # sbatch -A / --account
+qos:       ""                          # sbatch --qos; leave blank for default
+
+# ---- Notifications ----------------------------------------------------------
+email:     "<you@institute.edu>"      # --mail-user; leave blank for none
+mailtype:  "FAIL"                      # --mail-type; NONE|BEGIN|END|FAIL|ALL
+
+# ---- Scratch / tmp for GenomicsDBImport -------------------------------------
+# As with PBS: the workflow's `config.joint_calling.genomicsdb.tmp_dir` is
+# what gets passed to `gatk GenomicsDBImport --tmp-dir`. On most SLURM
+# clusters, per-job node-local scratch is exposed as `$TMPDIR` or
+# `$SLURM_TMPDIR` — override via a run-local config overlay:
+#   joint_calling: { genomicsdb: { tmp_dir: "$SLURM_TMPDIR" } }
+# This entry is DOCUMENTATION-ONLY (recorded so this file is the single
+# place site-specific paths are documented).
+tmp_dir_hint: "$SLURM_TMPDIR"

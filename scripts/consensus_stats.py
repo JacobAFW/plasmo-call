@@ -132,10 +132,18 @@ def positions_set(vcf: str) -> set[tuple[str, int]]:
 
 
 def tier_counts(df: pd.DataFrame, in_col: str) -> dict[str, int]:
-    """Return {'total','snp','indel'} for records where df[in_col] is truthy."""
+    """Return {'total','snp','indel'} for records where df[in_col] is truthy.
+
+    Guards for empty inputs — on the synthetic flat-Q fixture (Prompt D)
+    the consensus is legitimately 0 records, and empty-DF boolean masking
+    can drop columns in pandas."""
+    if df.empty:
+        return {"total": 0, "snp": 0, "indel": 0}
     sub = df[df[in_col]] if in_col else df
+    if sub.empty or "TYPE" not in sub.columns:
+        return {"total": int(len(sub)), "snp": 0, "indel": 0}
     return {
-        "total": len(sub),
+        "total": int(len(sub)),
         "snp":   int((sub["TYPE"] == "snp").sum()),
         "indel": int((sub["TYPE"] == "indel").sum()),
     }
