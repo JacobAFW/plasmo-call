@@ -1,48 +1,50 @@
 # plasmo-call
 
-A reproducible, portable **GATK4 consensus variant-calling pipeline** for
-malaria (*Plasmodium*) short-read data: `fastq → Consensus.vcf.gz`.
-Clone → run one install script → run, on **PBS or SLURM**.
-
-> Status: **scaffold / work in progress.** The repository layout, config, and
-> scheduler/BQSR design are in place; pipeline rule logic is being ported from
-> the predecessor (see below). Steps marked `TODO` are not yet active.
+A reproducible, portable **GATK4 consensus variant-calling pipeline** for malaria
+(*Plasmodium*) short-read data. Clone → run one install script → run, locally or
+on **PBS / SLURM**. Validated end-to-end on real *P. knowlesi* whole-genome data.
 
 ## What it does
 
-Per sample: `bwa`/`bwa-mem2 mem` → sort → Picard `MarkDuplicates` → read-group
+`fastq → consensus VCFs (+ filtered tiers)`, calling variants with **two callers
+and taking their consensus** for a conservative, high-confidence set.
+
+Per sample: `bwa` / `bwa-mem2 mem` → sort → Picard `MarkDuplicates` → read-group
 reheader → **BQSR** (`BaseRecalibrator` → `ApplyBQSR`) → GATK4 `HaplotypeCaller`
-(GVCF) → `CombineGVCFs`/`GenomicsDBImport` → `GenotypeGVCFs`. In parallel,
-`bcftools mpileup | call`. The two are combined into a **consensus** call set —
-GATK genotypes restricted to bcftools-called positions — for a conservative,
-high-confidence VCF.
+(GVCF). GVCFs are consolidated with **GenomicsDBImport** (default; scales to
+thousands of samples) or `CombineGVCFs`, then genotyped **per interval** with
+`GenotypeGVCFs` and gathered per chromosome. In parallel, `bcftools mpileup | call`
+runs per interval. The two arms are combined into a **consensus** — GATK genotypes
+restricted to bcftools-called positions.
 
 Built on [vvg-box](https://github.com/vivaxgen/vvg-box) (pixi environment +
-PBS/SLURM Snakemake profiles). Predecessor (reference, read-only):
+auto-detecting PBS/SLURM Snakemake profiles). Predecessor (reference, read-only):
 [JacobAFW/Variant_Calling_Pipeline](https://github.com/JacobAFW/Variant_Calling_Pipeline)
-— note that was **GATK 3.8**; plasmo-call is a full GATK4 migration and drops the
-GATK3 indel-realignment steps (replaced by GATK4 HaplotypeCaller reassembly).
+— that was **GATK 3.8**; plasmo-call is a full GATK4 migration and drops the GATK3
+indel-realignment steps (subsumed by GATK4 HaplotypeCaller local reassembly).
 
 ## Install
 
 ```bash
 git clone https://github.com/JacobAFW/plasmo-call.git
 cd plasmo-call
-./install.sh        # bootstraps vvg-box, then pixi-installs the tools  (TODO)
+./install.sh        # bootstraps vvg-box into ./box, then pixi-installs the tools
 ```
 
 ## Run
 
-Build and validate **locally first (no scheduler)**, then test on each cluster:
+Validate **locally first (no scheduler)**, then run on a cluster:
 
-| Rung | Mode  | Command                                   |
-|------|-------|-------------------------------------------|
-| 1    | local | `snakemake --cores N`  (on `test/` data)  |
-| 2    | PBS   | use `profiles/pbs/`                        |
-| 3    | SLURM | use `profiles/slurm/`                      |
+| Rung | Mode  | How                                                        |
+|------|-------|------------------------------------------------------------|
+| 1    | local | `pixi run smoke-test` (bundled data) · `pixi run run-local` |
+| 2    | PBS   | fill `profiles/pbs/site.local.yaml`, run with `profiles/pbs/`   |
+| 3    | SLURM | fill `profiles/slurm/site.local.yaml`, run with `profiles/slurm/` |
 
-See [`docs/schedulers.md`](docs/schedulers.md) and
-[`profiles/README.md`](profiles/README.md).
+The scheduler profiles ship with the submission logic and per-rule resources; you
+supply your site's account/queue/storage/scratch in a gitignored `site.local.yaml`
+(copy the `site.example.yaml` template). See [`docs/schedulers.md`](docs/schedulers.md)
+and [`profiles/README.md`](profiles/README.md).
 
 ## Configure
 
@@ -50,38 +52,54 @@ Everything site-specific is config — **no institute paths, accounts, storage, 
 emails live in the code.** Edit `config/config.yaml`:
 
 - **Reference** — `reference.fasta` + `reference.bed` (malaria default expected,
-  fully configurable). Genome data is **not** committed.
+  fully configurable). `.fai`/`.dict` are built automatically. Genome data is not
+  committed.
+- **Species** — `species:` selects `config/species/<name>.yaml`, which supplies the
+  per-species HaplotypeCaller `--heterozygosity` / `--indel-heterozygosity` priors.
+  It is **required** — the run stops if the selected species' priors are unset, so
+  data is never silently called with another species' priors. Shared, species-agnostic
+  HaplotypeCaller flags live in `config/params.yaml`.
 - **BQSR** — `bqsr.mode`: `auto` (blank `known_variants` → bootstrap, else
-  known-sites; the choice is logged loudly), `known_sites`, `bootstrap`, or
-  `off`. GATK4's `BaseRecalibrator` still requires known sites; for *Plasmodium*
-  (no dbSNP) the pipeline can **bootstrap** them (call → hard-filter → reuse).
-- **Species priors** — `species:` selects a file in `config/species/`. The
-  HaplotypeCaller `--heterozygosity` / `--indel-heterozygosity` priors are
-  per-species config, **not** hard-coded.
+  known-sites; the choice is logged), `known_sites`, `bootstrap`, or `off`. GATK4's
+  `BaseRecalibrator` still requires known sites; for *Plasmodium* (no dbSNP) the
+  pipeline can **bootstrap** them (call → hard-filter → reuse).
+- **Joint calling** — `joint_calling.consolidation`: `genomicsdb` (default,
+  scale-first) or `combine_gvcfs` (small cohorts).
+- **Filtering** — `filter.light.min_qual` and `filter.hard.{qd,fs,mq}` (see Outputs).
 
-### ⚠ Species presets
+## Outputs
 
-| Species  | Priors            | Status                              |
-|----------|-------------------|-------------------------------------|
-| vivax    | 0.0029 / 0.0017   | **Documented** (only validated one) |
-| knowlesi | unset             | **TBD** — set before use            |
-| malariae | unset             | **TBD** — set before use            |
-| ovale    | unset             | **TBD** — set before use            |
+The consensus is emitted **raw plus two filter tiers**, side by side — the raw set
+is never replaced, so any tier can be re-derived cheaply without re-calling:
 
-Non-vivax priors are deliberately left blank — supply values from literature or
-estimate them before running those species. The remaining HaplotypeCaller flags
-(`--kmer-size 10/25/40`, `--dont-use-soft-clipped-bases`,
-`--min-assembly-region-size 100`, `--do-not-run-physical-phasing`,
-`--base-quality-score-threshold 12`, `-mbq 5`, `-DF MappingQualityReadFilter`)
-are species-agnostic shared defaults in `config/params.yaml`.
+| Output | Filter | Use |
+|--------|--------|-----|
+| `Consensus.vcf.gz` | none (GATK ∩ bcftools) | reproducible base |
+| `Consensus.light.vcf.gz` | `QUAL ≥ 30` | permissive / discovery |
+| `Consensus.hard.vcf.gz` | `QD < 15`, `FS > 1`, `MQ < 40` | stringent, popgen/GWAS-grade |
+
+The **hard** tier follows the Sanger/MalariaGEN, non-model-organism recipe (QD/FS/MQ
+only). GATK's rank-sum filters (`MQRankSum`, `ReadPosRankSum`, `SOR`) are deliberately
+*not* applied: they are diploid-tuned tests defined only at heterozygous sites, and
+*Plasmodium* is haploid (apparent hets are mixed/polyclonal infections, handled
+downstream via Fws/COI). They are shown in the report for transparency but not filtered.
+
+`output/filter/stats.{txt,tsv}` is a **funnel report** — record counts at
+raw → light → hard by SNP/indel, plus per-site QUAL/QD/FS/MQ (and the rank-sum/SOR)
+distributions with both tiers' thresholds marked, so thresholds can be reviewed and
+retuned per dataset.
+
+> Downstream population-genetics QC — sample/site missingness, MAF, Fws/clonality,
+> and core-genome / hypervariable-region masking — is intentionally left to the
+> analysis workflow, not this caller.
 
 ## What's included / deliberately excluded
 
-**Included:** workflow code, config templates, species presets, scheduler
-profiles, install script, docs.
-**Excluded** (see `.gitignore`): all sequencing/variant data (FASTQ/BAM/CRAM/VCF),
-reference genomes & indices, run outputs/logs, the pixi env dir, and any
-filled-in site profile or secret. `pixi.lock` **is** committed for reproducibility.
+**Included:** workflow code, config templates, scheduler profiles, install script,
+docs. **Excluded** (see `.gitignore`): all sequencing/variant data
+(FASTQ/BAM/CRAM/VCF), reference genomes & indices, run outputs/logs, the pixi env
+and vvg-box `box/`, and any filled-in `site.local.yaml` or secret. `pixi.lock` **is**
+committed for reproducibility.
 
 ## License
 
