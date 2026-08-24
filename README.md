@@ -52,8 +52,12 @@ Everything site-specific is config — **no institute paths, accounts, storage, 
 emails live in the code.** Edit `config/config.yaml`:
 
 - **Reference** — `reference.fasta` + `reference.bed` (malaria default expected,
-  fully configurable). `.fai`/`.dict` are built automatically. Genome data is not
-  committed.
+  fully configurable). Missing `.fai`/`.dict`/aligner indices are built
+  automatically next to the fasta; any that **already exist are reused as-is**,
+  and no rule is scheduled to rebuild them. A curated, **read-only, pre-indexed**
+  reference therefore works directly — nothing is written to it, so no copy to a
+  writable location is needed (see [`docs/hpc-gotchas.md`](docs/hpc-gotchas.md)).
+  Genome data is not committed.
 - **Species** — `species:` selects `config/species/<name>.yaml`, which supplies the
   per-species HaplotypeCaller `--heterozygosity` / `--indel-heterozygosity` priors.
   It is **required** — the run stops if the selected species' priors are unset, so

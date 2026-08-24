@@ -68,6 +68,67 @@ ALIGNER = config.get("aligner", "bwa")
 if ALIGNER not in ("bwa", "bwa-mem2"):
     sys.exit(f"ERROR: config.aligner must be 'bwa' or 'bwa-mem2' (got {ALIGNER!r})")
 
+# Only the SELECTED aligner's index is ever needed; the other one is neither
+# consumed nor built.
+ALIGNER_INDEX_SENTINEL = (
+    BWA_INDEX_SENTINEL if ALIGNER == "bwa" else BWA_MEM2_INDEX_SENTINEL
+)
+
+# ---- Pre-indexed reference detection (Prompt J) -----------------------------
+# Shared clusters (Gadi et al.) hand you a curated, READ-ONLY, already-indexed
+# FASTA. If the index-prep rules always declared .fai/.dict/.bwt as outputs,
+# Snakemake would schedule a rebuild and die with ProtectedOutputException on
+# the read-only directory — forcing a copy of the whole reference somewhere
+# writable.
+#
+# Instead: probe for each index HERE, at parse time, and let mapping.smk DEFINE
+# an index-build rule only for the ones that are MISSING. An index that already
+# exists has no rule producing it, so Snakemake treats it as a plain pre-existing
+# static input file and never attempts to write it. Downstream rules keep
+# consuming REF_FAI / REF_DICT / ALIGNER_INDEX_SENTINEL as inputs, unchanged.
+#
+# Consequence worth knowing: an existing index is used AS-IS and is never
+# refreshed, even if it predates the FASTA. That's the whole point on a
+# read-only ref, but it can bite on a writable one, so we warn below.
+BUILD_REF_FAI           = not os.path.exists(REF_FAI)
+BUILD_REF_DICT          = not os.path.exists(REF_DICT)
+BUILD_ALIGNER_INDEX     = not os.path.exists(ALIGNER_INDEX_SENTINEL)
+
+
+def _log_reference_indices() -> None:
+    """LOUD banner: which reference indices are reused vs built."""
+    entries = [
+        ("faidx",           REF_FAI,                BUILD_REF_FAI),
+        ("dict",            REF_DICT,               BUILD_REF_DICT),
+        (f"{ALIGNER} index", ALIGNER_INDEX_SENTINEL, BUILD_ALIGNER_INDEX),
+    ]
+    bar = "=" * 72
+    lines = [bar, f"[plasmo-call] reference = {REF_FASTA}"]
+    stale = []
+    for label, path, building in entries:
+        if building:
+            lines.append(f"              {label:<16} MISSING  -> will build {path}")
+        else:
+            lines.append(f"              {label:<16} found    -> reusing as-is")
+            try:
+                if os.path.getmtime(path) < os.path.getmtime(REF_FASTA):
+                    stale.append(path)
+            except OSError:
+                pass
+    if not any(b for _, _, b in entries):
+        lines.append("              reference is fully pre-indexed; no index rules scheduled")
+        lines.append("              (a READ-ONLY reference directory is fine — nothing is written)")
+    if stale:
+        lines.append("              WARNING: index file(s) OLDER than the FASTA — reused anyway:")
+        for path in stale:
+            lines.append(f"                - {path}")
+        lines.append("              delete them to force a rebuild if the FASTA really changed.")
+    lines.append(bar)
+    print("\n" + "\n".join(lines) + "\n", file=sys.stderr)
+
+
+_log_reference_indices()
+
 # ---- Chromosome / interval wrangling ---------------------------------------
 # Ported from the GATK3 predecessor (pandas wide_to_long). Same semantics,
 # stdlib-only:

@@ -11,43 +11,51 @@
 # =============================================================================
 
 # ---- Reference indices ------------------------------------------------------
+# Each build rule is DEFINED ONLY IF its target is missing (flags resolved at
+# parse time in common.smk). An index that already sits next to the FASTA has
+# no rule producing it, so Snakemake consumes it as a pre-existing static input
+# and never tries to overwrite it — which is what makes a curated, READ-ONLY,
+# pre-indexed reference (Gadi & friends) work without copying it somewhere
+# writable. Missing indices are still built next to the FASTA, as before.
 
-rule samtools_faidx:
-    input:
-        REF_FASTA
-    output:
-        REF_FAI
-    shell:
-        "samtools faidx {input}"
+if BUILD_REF_FAI:
+    rule samtools_faidx:
+        input:
+            REF_FASTA
+        output:
+            REF_FAI
+        shell:
+            "samtools faidx {input}"
 
-rule sequence_dict:
-    input:
-        REF_FASTA
-    output:
-        REF_DICT
-    shell:
-        "picard CreateSequenceDictionary R={input} O={output}"
+if BUILD_REF_DICT:
+    rule sequence_dict:
+        input:
+            REF_FASTA
+        output:
+            REF_DICT
+        shell:
+            "picard CreateSequenceDictionary R={input} O={output}"
 
-rule bwa_index:
-    input:
-        REF_FASTA
-    output:
-        # bwa writes 5 sidecars; .bwt is the cheapest to use as a sentinel.
-        sentinel = BWA_INDEX_SENTINEL,
-    shell:
-        "bwa index {input}"
+# Only the aligner named by config.aligner gets an index rule — the unused
+# aligner's sidecars are neither required nor built.
+if BUILD_ALIGNER_INDEX and ALIGNER == "bwa":
+    rule bwa_index:
+        input:
+            REF_FASTA
+        output:
+            # bwa writes 5 sidecars; .bwt is the cheapest to use as a sentinel.
+            sentinel = BWA_INDEX_SENTINEL,
+        shell:
+            "bwa index {input}"
 
-rule bwa_mem2_index:
-    input:
-        REF_FASTA
-    output:
-        sentinel = BWA_MEM2_INDEX_SENTINEL,
-    shell:
-        "bwa-mem2 index {input}"
-
-def _aligner_index_input(_wildcards):
-    """Choose which index sidecar gates bwa_map based on config.aligner."""
-    return BWA_INDEX_SENTINEL if ALIGNER == "bwa" else BWA_MEM2_INDEX_SENTINEL
+if BUILD_ALIGNER_INDEX and ALIGNER == "bwa-mem2":
+    rule bwa_mem2_index:
+        input:
+            REF_FASTA
+        output:
+            sentinel = BWA_MEM2_INDEX_SENTINEL,
+        shell:
+            "bwa-mem2 index {input}"
 
 # ---- Map + sort -------------------------------------------------------------
 
@@ -55,7 +63,7 @@ rule bwa_map:
     input:
         fasta = REF_FASTA,
         fai   = REF_FAI,
-        index = _aligner_index_input,
+        index = ALIGNER_INDEX_SENTINEL,
         r1    = f"{SOURCE_DIR}/{{sample}}_1.fastq.gz",
         r2    = f"{SOURCE_DIR}/{{sample}}_2.fastq.gz",
     output:
