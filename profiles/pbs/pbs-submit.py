@@ -108,7 +108,7 @@ def main() -> None:
         cmd += ["-m", str(site.get("mailon", "a"))]
 
     # Always-on flags matching the known-working invocation.
-    cmd += ["-j", "oe", "-V", "-S", "/bin/sh"]
+    cmd += ["-o", "/dev/null", "-e", "/dev/null", "-V", "-S", "/bin/sh"]
 
     # Extra flags from env for one-off overrides (matches vvg-box's convention).
     extras = os.environ.get("SNAKEMAKE_CLUSTER_EXTRA_FLAGS", "").strip()

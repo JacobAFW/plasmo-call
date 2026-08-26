@@ -35,6 +35,44 @@ tool env, and `-V` then carries that PATH to the compute nodes.
 The same `unset` is needed to run the **local smoke test** without submitting
 jobs: `unset SNAKEMAKE_PROFILE; pixi run smoke-test`.
 
+## Run via a CONTROLLER job — never on the login node
+Do NOT run the Snakemake orchestrator interactively (login node / tmux) — the
+login-node reaper or a dropped session will kill it, orphaning jobs (you'll see
+`touch: .snakemake/tmp.XXX/NN.jobfinished: No such file or directory`). Instead
+submit a lightweight **controller job** that runs Snakemake from a compute node
+and submits the workers via nested qsub (Gadi allows this). Example
+`run-controller.pbs` (fill in project/queue/storage):
+
+```bash
+#!/bin/bash
+#PBS -P <proj>
+#PBS -q <queue>
+#PBS -N plasmo-call-ctl
+#PBS -l ncpus=1,mem=8GB,walltime=48:00:00,jobfs=10GB
+#PBS -l storage=gdata/<proj>+scratch/<proj>
+#PBS -j oe
+set -euo pipefail
+cd /path/to/plasmo-call
+./box/bin/pixi run -- snakemake --unlock \
+  --profile profiles/pbs --configfile config/config.yaml \
+  --configfile config/config.run-local.yaml || true
+./box/bin/pixi run -- snakemake \
+  --profile profiles/pbs --configfile config/config.yaml \
+  --configfile config/config.run-local.yaml \
+  --keep-going --rerun-incomplete
+```
+
+Submit with `qsub run-controller.pbs`; the controller's own `plasmo-call-ctl.o<id>`
+log holds the Snakemake summary. (Use `./box/bin/pixi run` — not
+`source box/bin/activate` — so tools are on PATH without `SNAKEMAKE_PROFILE`
+contamination.)
+
+## Worker job logs — only failures are kept
+Worker jobs send PBS stdout/stderr to `/dev/null`; the jobscript captures each
+job to `logs/plasmo.<jobid>.log` and deletes it on success. So `logs/` holds
+only the jobs that FAILED — no hundreds of `.o` files from a clean scatter run.
+Resource usage for a killed job: `qstat -xf <jobid>`.
+
 ## Site config — `storage` is mandatory on Gadi
 Fill `profiles/pbs/site.local.yaml` (gitignored). **If `storage` is missing, jobs
 submit but die instantly** with `cd: /g/data/<proj>: No such file or directory` —
