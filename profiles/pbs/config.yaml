@@ -21,7 +21,6 @@ jobscript: "profiles/pbs/pbs-jobscript.sh"
 jobs: 200
 latency-wait: 60
 verbose: true
-notemp: true                   # don't delete intermediates until run ends
 
 # ---- Default resources (in effect unless a set-resources entry overrides) ---
 # runtime is MINUTES (Snakemake convention). mem_mb is MB.
@@ -79,6 +78,12 @@ set-resources:
   genomicsdb_import:
     mem_mb: 32768                     # 32 GB — writes many TileDB fragments
     runtime: 1440
+    # disk_mb → `-l jobfs=<n>MB` (pbs-submit.py). The ONLY rule that requests
+    # node-local scratch: GenomicsDBImport writes a lot of TileDB scratch via
+    # --tmp-dir "$PBS_JOBFS". 100 GB is a STARTING ESTIMATE for ~580 samples —
+    # check actual use with `qstat -xf <jobid> | grep jobfs` after the first
+    # scale run and tune.
+    disk_mb: 100000                   # ~100 GB of $PBS_JOBFS
   genotype_gvcfs:
     mem_mb: 16384                     # 16 GB per interval — modest
     runtime: 720                      # 12h; per-interval is small

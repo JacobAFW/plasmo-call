@@ -8,7 +8,7 @@
 # invocation from JacobAFW/Variant_Calling_Pipeline:
 #
 #   qsub -N <name> \
-#        -l ncpus=<t>,mem=<m>MB,walltime=<hh:mm:ss> \
+#        -l ncpus=<t>,mem=<m>MB,walltime=<hh:mm:ss>[,jobfs=<d>MB] \
 #        -A <account> -q <queue> \
 #        -l storage=<storage> \
 #        -M <email> -m <mailon> \
@@ -90,11 +90,19 @@ def main() -> None:
     resources = props.get("resources", {}) or {}
     mem_mb   = int(resources.get("mem_mb", 8192))
     runtime  = int(resources.get("runtime", 720))    # minutes
+    # Snakemake's standard `disk_mb` resource → PBS node-local scratch (jobfs).
+    # Only rules that actually declare it get a jobfs request; everything else
+    # keeps the plain ncpus/mem/walltime string. GenomicsDBImport is the one
+    # rule that needs it (heavy TileDB scratch via --tmp-dir "$PBS_JOBFS").
+    disk_mb  = int(resources.get("disk_mb", 0) or 0)
 
     cmd: list[str] = ["qsub"]
 
+    select = f"ncpus={threads},mem={mem_mb}MB,walltime={_fmt_walltime(runtime)}"
+    if disk_mb > 0:
+        select += f",jobfs={disk_mb}MB"
     cmd += ["-N", _job_name(props)]
-    cmd += ["-l", f"ncpus={threads},mem={mem_mb}MB,walltime={_fmt_walltime(runtime)}"]
+    cmd += ["-l", select]
 
     # Site-specific flags — each omitted if the site value is missing/blank.
     if site.get("account"):

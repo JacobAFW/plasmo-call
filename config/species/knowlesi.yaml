@@ -1,8 +1,8 @@
-# Plasmodium knowlesi — STUB. Priors are NOT set.
-# Per-species priors must be provided (from literature or estimated) before use.
-# Do NOT copy the vivax values here — they are vivax-specific.
+# Plasmodium knowlesi — DATA-DERIVED preset (finalised Nov 2026).
+# Priors estimated from Jacob's own 808-sample monoclonal Pk cohort, not copied
+# from another species. See `source` below for the full provenance.
 species_name: "Plasmodium knowlesi"
-heterozygosity:        # TBD — REQUIRED, set before running knowlesi
-indel_heterozygosity:  # TBD — REQUIRED, set before running knowlesi
-source: ""
-status: "TBD — priors unset"
+heterozygosity: 0.005             # --heterozygosity
+indel_heterozygosity: 0.000625    # --indel-heterozygosity  (= het/8, GATK default ratio)
+source: "pi=0.0051 (rounded 0.005) from the 808-sample monoclonal core-genome (masked) Pk cohort (Indonesia pop-gen run, Oct 2026, PkA1-H.1 ref); ~5x the GATK human default; consistent with Assefa et al. 2015 PNAS (~6e-3). indel = het/8 (GATK default ratio; provisional, Pk indel diversity may be higher)."
+status: "documented -- data-derived prior"

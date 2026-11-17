@@ -51,8 +51,12 @@ rule haplotype_caller:
         tbi  = "output/calling/gatk/gvcf/{sample}.g.vcf.gz.tbi",
     params:
         hc_args = HC_PARAMS,
+        # Explicit heap derived from the rule's mem_mb (see xmx_mb in
+        # common.smk). Without it the JVM sizes itself off PHYSICAL node RAM
+        # and the scheduler kills the job for exceeding its `mem=` request.
+        xmx     = lambda w, resources: xmx_mb(resources),
     shell:
-        "gatk HaplotypeCaller "
+        'gatk --java-options "-Xmx{params.xmx}m" HaplotypeCaller '
         "-R {input.fasta} "
         "-I {input.bam} "
         "-O {output.gvcf} "
@@ -93,16 +97,17 @@ rule combine_gvcfs:
         tbi  = temp("output/calling/gatk/gvcf/GATK_combined.g.vcf.gz.tbi"),
     params:
         v_args = lambda w, input: " ".join(f"-V {g}" for g in input.gvcfs),
+        xmx    = lambda w, resources: xmx_mb(resources),
     shell:
         # GATK4 CombineGVCFs is supposed to write the .tbi alongside the output,
         # but on osx-arm64 the bundled IntelGKL native lib falls back to Java
         # zip and the index sidecar is occasionally not produced. Re-index
         # explicitly so GenotypeGVCFs always finds a usable .tbi.
-        "gatk CombineGVCFs "
+        'gatk --java-options "-Xmx{params.xmx}m" CombineGVCFs '
         "-R {input.fasta} "
         "{params.v_args} "
         "-O {output.gvcf} && "
-        "gatk IndexFeatureFile -I {output.gvcf}"
+        'gatk --java-options "-Xmx{params.xmx}m" IndexFeatureFile -I {output.gvcf}'
 
 # ---- GenomicsDBImport (scale backend — per interval workspace) -------------
 # GenomicsDBImport quirks handled here:
@@ -131,11 +136,18 @@ rule genomicsdb_import:
         # tmp_dir: shell-expanded at runtime, so "$PBS_JOBFS" / "$TMPDIR"
         # resolve inside the scheduler job. See config.joint_calling.genomicsdb.tmp_dir.
         tmp_dir        = JOINT_CALLING["tmp_dir"],
+        # HEAP CARVE-OUT: GenomicsDBImport is the one rule that does NOT get
+        # 80% of mem_mb. Its heavy allocations are NATIVE/off-heap (TileDB
+        # write buffers), so a large JVM heap would crowd them out and OOM the
+        # job. Modest heap + --batch-size is the Broad-recommended control.
+        xmx            = lambda w, resources: xmx_mb(
+            resources, frac=GENOMICSDB_XMX_FRAC, cap=GENOMICSDB_XMX_CAP
+        ),
     shell:
         # GenomicsDBImport refuses to write into an existing workspace; wipe
         # then let it create fresh so re-runs on the same interval succeed.
         "rm -rf {output.workspace} && "
-        "gatk GenomicsDBImport "
+        'gatk --java-options "-Xmx{params.xmx}m" GenomicsDBImport '
         "--genomicsdb-workspace-path {output.workspace} "
         "--sample-name-map {input.sample_name_map} "
         "--batch-size {params.batch_size} "
@@ -181,15 +193,23 @@ rule genotype_gvcfs:
         tbi = temp("output/calling/gatk/joint/intervals/gatk_genotyped_intervals_{interval}.vcf.gz.tbi"),
     params:
         variant_arg = _genotype_gvcfs_variant_arg,
+        # GenotypeGVCFs recomputes the final genotype QUAL and has its OWN
+        # priors (defaulting to the human 0.001). Without these two flags the
+        # per-species priors passed to HaplotypeCaller are largely INERT in
+        # joint calling. Applies to BOTH consolidation backends — this is one
+        # rule, so there is a single place to keep in sync.
+        prior_args  = SPECIES_PRIOR_ARGS,
+        xmx         = lambda w, resources: xmx_mb(resources),
     shell:
         # -L is redundant for the gendb backend (the workspace is already
         # interval-scoped) but harmless — GATK filters to the specified
         # interval either way, so keeping -L for BOTH backends makes the two
         # code paths symmetric and easier to reason about.
-        "gatk GenotypeGVCFs "
+        'gatk --java-options "-Xmx{params.xmx}m" GenotypeGVCFs '
         "-R {input.fasta} "
         "-V {params.variant_arg} "
         "-L {wildcards.interval} "
+        "{params.prior_args} "
         "-O {output.vcf}"
 
 # ---- Concat a chromosome's interval VCFs → per-chrom joint VCF -------------

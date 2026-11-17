@@ -34,8 +34,9 @@ rule base_recalibrator:
         table = temp("output/bam_recal/{sample}.recal.table"),
     params:
         ks_args = lambda w, input: " ".join(f"--known-sites {v}" for v in input.known_sites),
+        xmx     = lambda w, resources: xmx_mb(resources),
     shell:
-        "gatk BaseRecalibrator "
+        'gatk --java-options "-Xmx{params.xmx}m" BaseRecalibrator '
         "-R {input.fasta} "
         "-I {input.bam} "
         "-L {input.bed} "
@@ -57,8 +58,10 @@ rule apply_bqsr:
         bam = "output/bam_recal/{sample}_recalibrated.bam",
         # ApplyBQSR writes the BAI alongside (Picard-style .bai, not .bam.bai).
         bai = "output/bam_recal/{sample}_recalibrated.bai",
+    params:
+        xmx = lambda w, resources: xmx_mb(resources),
     shell:
-        "gatk ApplyBQSR "
+        'gatk --java-options "-Xmx{params.xmx}m" ApplyBQSR '
         "-R {input.fasta} "
         "-I {input.bam} "
         "-L {input.bed} "
@@ -100,8 +103,9 @@ rule bootstrap_haplotype_caller:
         tbi  = temp("output/bqsr/bootstrap/gvcf/{sample}.g.vcf.gz.tbi"),
     params:
         hc_args = HC_PARAMS,
+        xmx     = lambda w, resources: xmx_mb(resources),
     shell:
-        "gatk HaplotypeCaller "
+        'gatk --java-options "-Xmx{params.xmx}m" HaplotypeCaller '
         "-R {input.fasta} "
         "-I {input.bam} "
         "-O {output.gvcf} "
@@ -119,13 +123,14 @@ rule bootstrap_combine_gvcfs:
         tbi  = temp("output/bqsr/bootstrap/combined.g.vcf.gz.tbi"),
     params:
         v_args = lambda w, input: " ".join(f"-V {g}" for g in input.gvcfs),
+        xmx    = lambda w, resources: xmx_mb(resources),
     shell:
         # Index explicitly — same osx-arm64 IntelGKL quirk as the main pipeline.
-        "gatk CombineGVCFs "
+        'gatk --java-options "-Xmx{params.xmx}m" CombineGVCFs '
         "-R {input.fasta} "
         "{params.v_args} "
         "-O {output.gvcf} && "
-        "gatk IndexFeatureFile -I {output.gvcf}"
+        'gatk --java-options "-Xmx{params.xmx}m" IndexFeatureFile -I {output.gvcf}'
 
 rule bootstrap_genotype:
     input:
@@ -137,11 +142,19 @@ rule bootstrap_genotype:
     output:
         vcf = temp("output/bqsr/bootstrap/genotyped.vcf.gz"),
         tbi = temp("output/bqsr/bootstrap/genotyped.vcf.gz.tbi"),
+    params:
+        # Same reasoning as the main genotype_gvcfs rule: GenotypeGVCFs has its
+        # own priors, so the species values must be passed here too — kept
+        # consistent so the bootstrap known-sites set is derived under the same
+        # prior as the final callset.
+        prior_args = SPECIES_PRIOR_ARGS,
+        xmx        = lambda w, resources: xmx_mb(resources),
     shell:
         # No -L: bootstrap operates on the whole genome (one cohort VCF).
-        "gatk GenotypeGVCFs "
+        'gatk --java-options "-Xmx{params.xmx}m" GenotypeGVCFs '
         "-R {input.fasta} "
         "-V {input.gvcf} "
+        "{params.prior_args} "
         "-O {output.vcf}"
 
 # ---- Hard-filter to high-confidence known sites (SNVs + indels) ------------
@@ -165,16 +178,17 @@ rule bootstrap_filter_snvs:
     params:
         expr     = config["bqsr"]["bootstrap"]["snv_filter"],
         var_type = "SNP",
+        xmx      = lambda w, resources: xmx_mb(resources),
     shell:
         "tmp=$(mktemp -d); "
-        "gatk SelectVariants -R {input.fasta} -V {input.vcf} "
+        'gatk --java-options "-Xmx{params.xmx}m" SelectVariants -R {input.fasta} -V {input.vcf} '
         "  --select-type-to-include {params.var_type} -O $tmp/typed.vcf.gz && "
-        "gatk VariantFiltration -R {input.fasta} -V $tmp/typed.vcf.gz "
+        'gatk --java-options "-Xmx{params.xmx}m" VariantFiltration -R {input.fasta} -V $tmp/typed.vcf.gz '
         "  --filter-expression '{params.expr}' --filter-name BootstrapFail "
         "  -O $tmp/marked.vcf.gz && "
-        "gatk SelectVariants -R {input.fasta} -V $tmp/marked.vcf.gz "
+        'gatk --java-options "-Xmx{params.xmx}m" SelectVariants -R {input.fasta} -V $tmp/marked.vcf.gz '
         "  --exclude-filtered -O {output.vcf} && "
-        "gatk IndexFeatureFile -I {output.vcf} && "
+        'gatk --java-options "-Xmx{params.xmx}m" IndexFeatureFile -I {output.vcf} && '
         "rm -rf $tmp"
 
 rule bootstrap_filter_indels:
@@ -190,14 +204,15 @@ rule bootstrap_filter_indels:
     params:
         expr     = config["bqsr"]["bootstrap"]["indel_filter"],
         var_type = "INDEL",
+        xmx      = lambda w, resources: xmx_mb(resources),
     shell:
         "tmp=$(mktemp -d); "
-        "gatk SelectVariants -R {input.fasta} -V {input.vcf} "
+        'gatk --java-options "-Xmx{params.xmx}m" SelectVariants -R {input.fasta} -V {input.vcf} '
         "  --select-type-to-include {params.var_type} -O $tmp/typed.vcf.gz && "
-        "gatk VariantFiltration -R {input.fasta} -V $tmp/typed.vcf.gz "
+        'gatk --java-options "-Xmx{params.xmx}m" VariantFiltration -R {input.fasta} -V $tmp/typed.vcf.gz '
         "  --filter-expression '{params.expr}' --filter-name BootstrapFail "
         "  -O $tmp/marked.vcf.gz && "
-        "gatk SelectVariants -R {input.fasta} -V $tmp/marked.vcf.gz "
+        'gatk --java-options "-Xmx{params.xmx}m" SelectVariants -R {input.fasta} -V $tmp/marked.vcf.gz '
         "  --exclude-filtered -O {output.vcf} && "
-        "gatk IndexFeatureFile -I {output.vcf} && "
+        'gatk --java-options "-Xmx{params.xmx}m" IndexFeatureFile -I {output.vcf} && '
         "rm -rf $tmp"

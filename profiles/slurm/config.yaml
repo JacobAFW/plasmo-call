@@ -15,7 +15,6 @@ jobscript: "profiles/slurm/slurm-jobscript.sh"
 jobs: 200
 latency-wait: 60
 verbose: true
-notemp: true
 
 default-resources:
   - mem_mb=8192
@@ -62,6 +61,13 @@ set-resources:
   genomicsdb_import:
     mem_mb: 32768
     runtime: 1440
+    # disk_mb → `--tmp=<n>` (slurm-submit.py); mirrors the PBS `jobfs=` request.
+    # Only rule that asks for node-local scratch. Starting estimate for ~580
+    # samples; tune from `sacct`/site tooling after the first scale run.
+    # SLURM exposes this scratch as $TMPDIR (or $SLURM_TMPDIR) — set
+    # `joint_calling.genomicsdb.tmp_dir: "$TMPDIR"` in your run config. The
+    # "$PBS_JOBFS" value in the PBS docs is PBS-specific and will NOT resolve here.
+    disk_mb: 100000                   # ~100 GB of node-local scratch
   genotype_gvcfs:
     mem_mb: 16384
     runtime: 720

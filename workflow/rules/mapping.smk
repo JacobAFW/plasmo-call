@@ -33,7 +33,13 @@ if BUILD_REF_DICT:
             REF_FASTA
         output:
             REF_DICT
+        params:
+            # bioconda's picard wrapper caps the heap at -Xmx2g unless an
+            # explicit -Xm* arg or $_JAVA_OPTIONS is set; exporting
+            # _JAVA_OPTIONS both suppresses that default and sets our own.
+            xmx = lambda w, resources: xmx_mb(resources),
         shell:
+            '_JAVA_OPTIONS="-Xmx{params.xmx}m" '
             "picard CreateSequenceDictionary R={input} O={output}"
 
 # Only the aligner named by config.aligner gets an index rule — the unused
@@ -87,10 +93,20 @@ rule mark_duplicates:
         bam = "output/mapped_reads/{sample}.bam",
     output:
         bam     = temp("output/bam/{sample}_dupmarked.bam"),
-        metrics = temp("output/bam/{sample}_picard_metrics.txt"),
+        # NOT temp(): the per-sample duplicate-rate metrics are a QC artefact
+        # worth keeping across a cohort run. No rule consumes this file.
+        metrics = "output/bam/{sample}_picard_metrics.txt",
+    params:
+        # Without this the bioconda picard wrapper's own `-Xmx2g` default
+        # applies — a hard 2 GB ceiling no matter how much memory the
+        # scheduler granted the job. Setting $_JAVA_OPTIONS both suppresses
+        # that default (the wrapper checks for it) AND is picked up by the JVM
+        # itself, so it survives wrapper quirks.
+        xmx = lambda w, resources: xmx_mb(resources),
     shell:
         # AS=TRUE: assume coord-sorted input. VALIDATION_STRINGENCY=LENIENT
         # matches the predecessor.
+        '_JAVA_OPTIONS="-Xmx{params.xmx}m" '
         "picard MarkDuplicates AS=TRUE VALIDATION_STRINGENCY=LENIENT "
         "I={input.bam} O={output.bam} M={output.metrics}"
 

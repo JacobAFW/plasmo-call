@@ -131,7 +131,24 @@ aligner's sidecars are never required or built.
   the FASTA — reused anyway` line. To force a rebuild, delete the stale index
   (on a writable reference) — mtime alone will not trigger one.
 
-## GenomicsDBImport tmp dir
+## Disk: throwaway intermediates ARE cleaned during the run
+The scheduler profiles no longer set `notemp: true`, so Snakemake's `temp()`
+markers take effect on cluster runs the same way they do locally. At ~580
+samples that is the difference between keeping and discarding hundreds of GB of
+scratch mid-run.
+
+Deleted as soon as nothing needs them: `output/mapped_reads/*.bam`,
+`*_dupmarked.bam`, recal tables, per-interval GATK/bcftools VCFs, the combined
+GVCF, and the bootstrap pass's intermediates.
+
+**Kept** (the deliverables): `output/bam/{sample}.bam` + `.bam.bai`, the
+recalibrated BAMs when BQSR is on, per-sample GVCFs, the per-chromosome joint
+VCFs, the GenomicsDB workspaces, all three Consensus tiers + the filter stats,
+and `output/bam/{sample}_picard_metrics.txt` — the per-sample MarkDuplicates
+duplicate-rate metrics, deliberately NOT `temp()` so the cohort's dup rates
+survive the run as a QC artefact (no rule consumes the file).
+
+## GenomicsDBImport tmp dir + jobfs request
 Point it at node-local scratch — shared filesystems make it crawl:
 ```yaml
 # config.run-local.yaml
@@ -139,6 +156,62 @@ joint_calling:
   genomicsdb:
     tmp_dir: "$PBS_JOBFS"
 ```
+`$PBS_JOBFS` only exists if the job actually **requested** jobfs, so
+`profiles/pbs/config.yaml` gives `genomicsdb_import` (and only that rule)
+`disk_mb: 100000`; `pbs-submit.py` turns any non-zero `disk_mb` into
+`,jobfs=<n>MB` on the `-l` string. 100 GB is a starting estimate for ~580
+samples — after the first scale run check real use with
+`qstat -xf <jobid> | grep jobfs` and tune `disk_mb`.
+
+On **SLURM** the same `disk_mb` becomes `--tmp=<n>` (MB), but the scratch is
+exposed as `$TMPDIR` / `$SLURM_TMPDIR`, **not** `$PBS_JOBFS` — so use
+`tmp_dir: "$TMPDIR"` there. A `$PBS_JOBFS` value will silently expand to an
+empty string on SLURM.
+
+## JVM heap is derived from `mem_mb` — not left to the JVM
+Every GATK and Picard rule passes an **explicit** heap sized from its own
+`resources.mem_mb` (`xmx_mb()` in `workflow/rules/common.smk`, default 80%):
+
+* `gatk --java-options "-Xmx<n>m" <Tool> …`
+* `_JAVA_OPTIONS="-Xmx<n>m" picard <Tool> …`
+
+Why this matters on a cluster:
+
+* Left alone, the JVM sizes its heap off **physical node RAM** (~1/4). On a
+  big shared node that is far more than the job's `mem=` request, so PBS/SLURM
+  kills the job for exceeding its allocation instead of throwing a clean Java
+  OOM you could diagnose.
+* bioconda's `picard` wrapper hard-codes `-Xms512m -Xmx2g` unless an explicit
+  `-Xm*` arg or `$_JAVA_OPTIONS` is present. Without the `_JAVA_OPTIONS`
+  prefix, MarkDuplicates sits at a 2 GB ceiling no matter what you requested.
+  (`_JAVA_OPTIONS` is used rather than `-Xmx` as an argument because the
+  wrapper both *checks for* it and the JVM *itself* picks it up — it survives
+  wrapper quirks. You'll see `Picked up _JAVA_OPTIONS: …` in the job log;
+  that line is the confirmation it took.)
+
+Because the heap tracks `mem_mb`, bumping a rule's `set-resources` entry in the
+profile is all it takes — the heap follows. Local (no-profile) runs declare no
+`mem_mb`, so they fall back to `LOCAL_FALLBACK_MEM_MB` (4096 → `-Xmx3276m`).
+
+**One deliberate exception: `genomicsdb_import` gets 25% capped at 8192m.**
+GenomicsDBImport's heavy memory is **native / off-heap** (TileDB write
+buffers), not JVM heap; a large heap crowds the native allocations out of the
+`mem=` envelope and OOMs the job. Broad recommends a modest heap regardless of
+node size — footprint is controlled by `--batch-size` instead. At
+`mem_mb: 32768` that renders as `-Xmx8192m` (the cap), not `-Xmx26214m`.
+
+## Species priors — `knowlesi` is now a committed, data-derived preset
+`config/species/knowlesi.yaml` is no longer a TBD stub: it carries
+`heterozygosity: 0.005` / `indel_heterozygosity: 0.000625`, derived from the
+808-sample monoclonal core-genome Pk cohort (see the file's `source` field).
+**Production runs should use `species: knowlesi`** — switch
+`config.run-local.yaml` off `knowlesi-provisional`.
+
+Both priors are now passed to **GenotypeGVCFs as well as HaplotypeCaller**. In a
+GVCF workflow the final genotype QUAL is computed by GenotypeGVCFs, which has
+its own `--heterozygosity` / `--indel-heterozygosity` defaulting to the human
+`0.001` — passing the species priors only to HaplotypeCaller left them largely
+inert in joint calling.
 
 ## Test / provisional species priors
 The `config/species/*-provisional.yaml` files are **gitignored** (test-only), so

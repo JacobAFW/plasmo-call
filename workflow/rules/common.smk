@@ -31,17 +31,19 @@ with open(_species_file) as _fh:
     config["species_priors"] = yaml.safe_load(_fh)
 
 # ---- Validate species priors (fail fast on TBD stubs) -----------------------
-# GATK4 HaplotypeCaller needs concrete numeric values for both priors. The
-# stub species files (knowlesi/malariae/ovale) ship with `heterozygosity:`
-# left blank (yaml-null), so we bail before any rule fires.
+# GATK4 HaplotypeCaller and GenotypeGVCFs both need concrete numeric values for
+# the two priors. The remaining stub species files (malariae/ovale) ship with
+# `heterozygosity:` left blank (yaml-null), so we bail before any rule fires.
+# vivax and knowlesi are documented presets.
 _het  = config["species_priors"].get("heterozygosity")
 _ihet = config["species_priors"].get("indel_heterozygosity")
 if _het is None or _ihet is None:
     sys.exit(
         f"ERROR: species '{_species}' has unset priors in {_species_file}\n"
         f"       heterozygosity={_het!r}, indel_heterozygosity={_ihet!r}\n"
-        f"       Set both before running. See config/species/vivax.yaml for the\n"
-        f"       only documented preset; do NOT copy vivax values to other species."
+        f"       Set both before running. See config/species/vivax.yaml or\n"
+        f"       config/species/knowlesi.yaml for the documented presets; do NOT\n"
+        f"       copy another species' values over."
     )
 
 # ---- Sample discovery -------------------------------------------------------
@@ -271,6 +273,41 @@ wildcard_constraints:
     chromosome = r"[^:/]+",
     intervals  = r"[^/]+",
 
+# ---- JVM heap sizing (derived from resources.mem_mb) ------------------------
+# Neither GATK nor Picard defaults to a heap that respects the memory the
+# scheduler actually granted:
+#   * `gatk` leaves the heap to the JVM, which picks ~1/4 of PHYSICAL node RAM.
+#     On a big shared node that is far more than our `mem=` request, so the job
+#     gets killed by PBS/SLURM for exceeding its allocation instead of throwing
+#     a clean Java OOM we could diagnose.
+#   * bioconda's `picard` wrapper hard-codes `-Xms512m -Xmx2g` unless an
+#     explicit `-Xm*` arg or $_JAVA_OPTIONS is present — so MarkDuplicates
+#     would sit at a 2 GB ceiling even with mem_mb=51200.
+# Both are fixed by deriving an EXPLICIT heap from `resources.mem_mb` and
+# leaving the remainder as headroom for the JVM's non-heap use (metaspace,
+# thread stacks, GC structures, native/JNI allocations).
+#
+# Local runs declare no mem_mb (Snakemake sets only `tmpdir` by default), so we
+# fall back to LOCAL_FALLBACK_MEM_MB. Under a scheduler profile the
+# default-resources / set-resources entries always supply mem_mb, so the heap
+# TRACKS whatever was requested — it is never a hard-coded constant.
+LOCAL_FALLBACK_MEM_MB = 4096
+
+def xmx_mb(resources, frac: float = 0.80, floor: int = 512, cap: int = None) -> int:
+    """Java -Xmx in MB for a rule, as a fraction of its mem_mb allocation."""
+    mem_mb = resources.get("mem_mb") or LOCAL_FALLBACK_MEM_MB
+    heap = int(int(mem_mb) * frac)
+    if cap is not None:
+        heap = min(heap, cap)
+    return max(heap, floor)
+
+# GenomicsDBImport is the one EXCEPTION to the 80% rule. Its heavy memory use
+# is NATIVE / off-heap (TileDB write buffers), not JVM heap — handing it 80%
+# starves the native side and OOMs the job. Broad recommends a modest heap
+# regardless of node size; actual footprint is governed by --batch-size.
+GENOMICSDB_XMX_FRAC = 0.25
+GENOMICSDB_XMX_CAP  = 8192
+
 # ---- Shared HaplotypeCaller flag string -------------------------------------
 # Used by both the main HC rule (calling_gatk.smk) and the bootstrap HC rule
 # (bqsr.smk). Lives here because bqsr.smk loads before calling_gatk.smk.
@@ -293,6 +330,22 @@ def _hc_params_str() -> str:
     return " ".join(x for x in parts if x)
 
 HC_PARAMS = _hc_params_str()
+
+# ---- Species priors as standalone GATK flags --------------------------------
+# In a GVCF workflow the FINAL genotype QUAL is computed by GenotypeGVCFs, and
+# GenotypeGVCFs carries its OWN --heterozygosity / --indel-heterozygosity
+# (defaulting to the human 0.001). Passing the species priors only to
+# HaplotypeCaller therefore leaves them LARGELY INERT in joint calling.
+# These two flags — and ONLY these two — are appended to every GenotypeGVCFs
+# invocation (both consolidation backends, plus the bootstrap pass).
+#
+# Deliberately NOT the full HC_PARAMS: that string also carries assembly-stage
+# flags (--kmer-size, --min-assembly-region-size, --emit-ref-confidence, ...)
+# which GenotypeGVCFs rejects outright.
+SPECIES_PRIOR_ARGS = (
+    f"--heterozygosity {config['species_priors']['heterozygosity']} "
+    f"--indel-heterozygosity {config['species_priors']['indel_heterozygosity']}"
+)
 
 # ---- Joint calling backend --------------------------------------------------
 # Two consolidation backends before GenotypeGVCFs:

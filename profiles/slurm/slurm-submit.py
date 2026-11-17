@@ -73,6 +73,12 @@ def main() -> None:
     resources = props.get("resources", {}) or {}
     mem_mb   = int(resources.get("mem_mb", 8192))
     runtime  = int(resources.get("runtime", 720))    # minutes
+    # Snakemake's standard `disk_mb` resource → SLURM node-local scratch.
+    # `--tmp` takes MB by default, so disk_mb maps across 1:1. Mirrors the PBS
+    # profile's `jobfs=` request. NOTE: SLURM exposes that scratch as $TMPDIR
+    # (or $SLURM_TMPDIR), NOT $PBS_JOBFS — so the workflow-side override is
+    # `joint_calling.genomicsdb.tmp_dir: "$TMPDIR"` on SLURM.
+    disk_mb  = int(resources.get("disk_mb", 0) or 0)
 
     cmd: list[str] = ["sbatch", "--parsable"]
 
@@ -80,6 +86,8 @@ def main() -> None:
     cmd += [f"--cpus-per-task={threads}"]
     cmd += [f"--mem={mem_mb}M"]
     cmd += [f"--time={_fmt_walltime(runtime)}"]
+    if disk_mb > 0:
+        cmd += [f"--tmp={disk_mb}"]
 
     if site.get("partition"):
         cmd += ["-p", str(site["partition"])]

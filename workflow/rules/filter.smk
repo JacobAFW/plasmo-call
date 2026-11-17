@@ -90,8 +90,9 @@ rule filter_hard:
         qd = FILTER["hard"]["qd"],
         fs = FILTER["hard"]["fs"],
         mq = FILTER["hard"]["mq"],
+        xmx = lambda w, resources: xmx_mb(resources),
     shell:
-        "gatk VariantFiltration "
+        'gatk --java-options "-Xmx{params.xmx}m" VariantFiltration '
         "-R {input.fasta} "
         "-V {input.vcf} "
         "--filter-expression 'QD < {params.qd}' --filter-name 'QD{params.qd}' "
