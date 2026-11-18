@@ -91,9 +91,11 @@ def main() -> None:
     mem_mb   = int(resources.get("mem_mb", 8192))
     runtime  = int(resources.get("runtime", 720))    # minutes
     # Snakemake's standard `disk_mb` resource → PBS node-local scratch (jobfs).
-    # Only rules that actually declare it get a jobfs request; everything else
-    # keeps the plain ncpus/mem/walltime string. GenomicsDBImport is the one
-    # rule that needs it (heavy TileDB scratch via --tmp-dir "$PBS_JOBFS").
+    # DORMANT by default: the profile pins `disk_mb=0` in default-resources and
+    # NO rule overrides it, so every job gets the plain ncpus/mem/walltime
+    # string and requests no jobfs (matching the legacy pipeline, which ran
+    # ~900 samples with Java temp on /tmp). The mechanism below fires only if a
+    # future rule sets disk_mb>0 — kept so opting back in is a one-line change.
     disk_mb  = int(resources.get("disk_mb", 0) or 0)
 
     cmd: list[str] = ["qsub"]

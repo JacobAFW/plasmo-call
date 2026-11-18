@@ -27,6 +27,7 @@ verbose: true
 default-resources:
   - mem_mb=8192
   - runtime=720                # 12h
+  - disk_mb=0                  # no jobfs for any rule (legacy behaviour); pbs-submit.py adds jobfs only when a rule sets disk_mb>0
 
 # ---- Per-rule threads -------------------------------------------------------
 # Mapping and calling are the CPU-heavy rules. concat_/consensus_/filter_ are
@@ -78,12 +79,6 @@ set-resources:
   genomicsdb_import:
     mem_mb: 32768                     # 32 GB — writes many TileDB fragments
     runtime: 1440
-    # disk_mb → `-l jobfs=<n>MB` (pbs-submit.py). The ONLY rule that requests
-    # node-local scratch: GenomicsDBImport writes a lot of TileDB scratch via
-    # --tmp-dir "$PBS_JOBFS". 100 GB is a STARTING ESTIMATE for ~580 samples —
-    # check actual use with `qstat -xf <jobid> | grep jobfs` after the first
-    # scale run and tune.
-    disk_mb: 100000                   # ~100 GB of $PBS_JOBFS
   genotype_gvcfs:
     mem_mb: 16384                     # 16 GB per interval — modest
     runtime: 720                      # 12h; per-interval is small

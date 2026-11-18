@@ -48,7 +48,7 @@ and submits the workers via nested qsub (Gadi allows this). Example
 #PBS -P <proj>
 #PBS -q <queue>
 #PBS -N plasmo-call-ctl
-#PBS -l ncpus=1,mem=8GB,walltime=48:00:00,jobfs=10GB
+#PBS -l ncpus=1,mem=8GB,walltime=48:00:00
 #PBS -l storage=gdata/<proj>+scratch/<proj>
 #PBS -j oe
 set -euo pipefail
@@ -148,25 +148,49 @@ and `output/bam/{sample}_picard_metrics.txt` — the per-sample MarkDuplicates
 duplicate-rate metrics, deliberately NOT `temp()` so the cohort's dup rates
 survive the run as a QC artefact (no rule consumes the file).
 
-## GenomicsDBImport tmp dir + jobfs request
-Point it at node-local scratch — shared filesystems make it crawl:
+## No jobfs: GenomicsDBImport tmp dir is `/tmp`
+**No rule requests node-local scratch (jobfs).** `profiles/pbs/config.yaml`
+pins `disk_mb=0` in `default-resources` and no rule overrides it, and
+GenomicsDBImport's `--tmp-dir` is the committed default `/tmp`:
 ```yaml
-# config.run-local.yaml
+# config/config.yaml (already the default — nothing to override)
+joint_calling:
+  genomicsdb:
+    tmp_dir: "/tmp"
+```
+
+Why the explicit `disk_mb=0` matters: Snakemake's built-in default is
+`disk_mb = max(2 * input.size_mb, 1000)`, and `pbs-submit.py` turns any non-zero
+`disk_mb` into `,jobfs=<n>MB` on the `-l` string — so *every* job would request
+jobfs sized to 2× its input. For `bcftools_caller`, whose input is ALL BAMs,
+that is ~2 × 900 × ~2 GB ≈ 3.6 TB at ~900 samples: unschedulable on Gadi
+(nodes carry ~400 GB jobfs), and it only surfaces *after* mapping and calling
+have finished. The 2-sample test hid this because 2× two small BAMs fits
+anywhere. Pinning `disk_mb=0` matches the legacy GATK 3.8 pipeline, which ran
+~900 samples requesting no jobfs with Java temp on `/tmp`.
+
+Why `/tmp` is enough: on the real 2-sample run GenomicsDBImport used ~0 bytes
+of `--tmp-dir` scratch. Its TileDB workspace is written to the **output path**
+on `/g/data` (measured 95 MB for 2 samples, ~1.3 MB per interval), not to
+`--tmp-dir`.
+
+**Opting back in** (only if a run actually shows node-local scratch pressure —
+the jobfs mechanism in `pbs-submit.py` is kept dormant for exactly this):
+set `disk_mb` on that one rule *and* point the tmp dir at the scratch var, since
+`$PBS_JOBFS` only exists when the job requested jobfs:
+```yaml
+# profiles/pbs/config.yaml → set-resources
+  genomicsdb_import:
+    disk_mb: 100000                   # ~100 GB of $PBS_JOBFS
+# config/config.run-local.yaml
 joint_calling:
   genomicsdb:
     tmp_dir: "$PBS_JOBFS"
 ```
-`$PBS_JOBFS` only exists if the job actually **requested** jobfs, so
-`profiles/pbs/config.yaml` gives `genomicsdb_import` (and only that rule)
-`disk_mb: 100000`; `pbs-submit.py` turns any non-zero `disk_mb` into
-`,jobfs=<n>MB` on the `-l` string. 100 GB is a starting estimate for ~580
-samples — after the first scale run check real use with
-`qstat -xf <jobid> | grep jobfs` and tune `disk_mb`.
-
-On **SLURM** the same `disk_mb` becomes `--tmp=<n>` (MB), but the scratch is
-exposed as `$TMPDIR` / `$SLURM_TMPDIR`, **not** `$PBS_JOBFS` — so use
-`tmp_dir: "$TMPDIR"` there. A `$PBS_JOBFS` value will silently expand to an
-empty string on SLURM.
+Then check real use with `qstat -xf <jobid> | grep jobfs` and tune. On
+**SLURM** the same `disk_mb` becomes `--tmp=<n>` (MB) and the scratch is
+exposed as `$TMPDIR` / `$SLURM_TMPDIR`, **not** `$PBS_JOBFS` — a `$PBS_JOBFS`
+value silently expands to an empty string there.
 
 ## JVM heap is derived from `mem_mb` — not left to the JVM
 Every GATK and Picard rule passes an **explicit** heap sized from its own

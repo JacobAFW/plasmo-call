@@ -57,11 +57,14 @@ joint_calling:
   genomicsdb:
     batch_size:     50            # --batch-size for GenomicsDBImport (samples per batch)
     reader_threads:  1            # --reader-threads (bump if I/O-bound reading GVCFs)
-    # tmp_dir is passed to `gatk GenomicsDBImport --tmp-dir`. Local default
-    # is /tmp; on Gadi (PBS) set to "$PBS_JOBFS" for node-local scratch —
-    # GenomicsDBImport writes a lot of scratch and shared filesystems make
-    # it crawl. The value is shell-expanded at rule runtime, so env vars
-    # like $PBS_JOBFS / $TMPDIR resolve correctly.
+    # tmp_dir is passed to `gatk GenomicsDBImport --tmp-dir`. /tmp is the
+    # default everywhere, including HPC, and is sufficient: GenomicsDBImport's
+    # scratch footprint is tiny (measured ~0 bytes on a real run) because the
+    # TileDB workspace is written to the output/ path on shared storage, not to
+    # --tmp-dir. No rule requests node-local scratch (jobfs) by default. The
+    # value is shell-expanded at rule runtime, so if a future run ever shows
+    # real scratch pressure you can point this at an env var (e.g. "$PBS_JOBFS"
+    # / "$TMPDIR") AND set disk_mb>0 on genomicsdb_import in the profile.
     tmp_dir: "/tmp"
 
 # ---- Post-calling filter tiers + funnel stats (Prompt H) -------------------

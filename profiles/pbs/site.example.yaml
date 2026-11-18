@@ -26,12 +26,15 @@ mailon:   "a"                          # qsub -m; a=abort, b=begin, e=end, n=non
 
 # ---- Scratch / tmp for GenomicsDBImport -------------------------------------
 # The workflow's `config.joint_calling.genomicsdb.tmp_dir` is what actually
-# gets passed to `gatk GenomicsDBImport --tmp-dir`. On Gadi override the
-# workflow config to "$PBS_JOBFS" (node-local scratch — GenomicsDBImport
-# writes a lot of scratch and shared filesystems make it crawl). Recorded
-# here so this file is the ONE PLACE that documents site-specific paths.
+# gets passed to `gatk GenomicsDBImport --tmp-dir`. /tmp is the default and is
+# sufficient — on a real run GenomicsDBImport used ~0 bytes of scratch (its
+# TileDB workspace is written to output/ on shared storage, not to --tmp-dir),
+# and no rule requests node-local scratch (jobfs). Recorded here so this file
+# stays the ONE PLACE that documents site-specific paths.
 #
-# Set it via CLI: pixi run snakemake --profile profiles/pbs \
-#   --config joint_calling='{genomicsdb: {tmp_dir: "$PBS_JOBFS"}}'
-# or via a run-local config overlay (config/config.run-local.yaml — gitignored).
-tmp_dir_hint: "$PBS_JOBFS"
+# Only if a future run shows genuine scratch pressure: point this at node-local
+# scratch AND set `disk_mb` > 0 for genomicsdb_import in profiles/pbs/config.yaml
+# (without the jobfs request, $PBS_JOBFS does not exist in the job). E.g.
+#   pixi run snakemake --profile profiles/pbs \
+#     --config joint_calling='{genomicsdb: {tmp_dir: "$PBS_JOBFS"}}'
+tmp_dir_hint: "/tmp"

@@ -26,20 +26,23 @@ cp profiles/pbs/site.example.yaml profiles/pbs/site.local.yaml
 ${EDITOR:-nano} profiles/pbs/site.local.yaml     # fill in account, queue, storage, email
 ```
 
-Also override the GenomicsDBImport tmp-dir for Gadi (node-local scratch;
-GenomicsDBImport writes a lot and shared filesystems make it crawl). Put
-this in a run-local config overlay so nothing site-specific goes in the
-committed `config/config.yaml`:
+Site-specific run values go in a run-local config overlay, so nothing
+site-specific lands in the committed `config/config.yaml`:
 
 ```sh
 cat > config/config.run-local.yaml <<'YAML'
 joint_calling:
   genomicsdb:
-    tmp_dir: "$PBS_JOBFS"
+    tmp_dir: "/tmp"
 YAML
 ```
 
 (`config/config.run-local.yaml` is gitignored — see `.gitignore`.)
+
+`/tmp` is already the committed default and is sufficient — GenomicsDBImport's
+scratch footprint is ~0 (its TileDB workspace goes to `output/`, not `--tmp-dir`),
+and no rule requests jobfs; only switch to `"$PBS_JOBFS"` if a run shows real
+scratch pressure, and then also set `disk_mb` > 0 on `genomicsdb_import`.
 
 ## Submitting
 
